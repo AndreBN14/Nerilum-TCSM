@@ -159,8 +159,12 @@ class MainViewModel extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    _sessionVersion++;
     await logoutAccount();
+    clearSessionState();
+  }
+
+  void clearSessionState() {
+    _sessionVersion++;
     image = null;
     result = null;
     error = null;

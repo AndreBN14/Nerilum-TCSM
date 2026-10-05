@@ -3,7 +3,7 @@ import '../../domain/repositories/account_repository.dart';
 import '../datasources/mock_account_data_source.dart';
 import '../datasources/mock_session_data_source.dart';
 
-class MockAccountRepository implements AccountRepository {
+class MockAccountRepository extends AccountRepository {
   MockAccountRepository(this.source, this.session);
   final MockAccountDataSource source;
   final MockSessionDataSource session;

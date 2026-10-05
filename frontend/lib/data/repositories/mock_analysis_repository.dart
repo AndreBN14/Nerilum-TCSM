@@ -14,5 +14,5 @@ class MockAnalysisRepository implements AnalysisRepository {
 
   @override
   Future<List<AnalysisResult>> history() =>
-      source.history(accounts.currentAccount?.email);
+      source.history(accounts.isDemo ? accounts.currentAccount?.email : null);
 }

@@ -6,6 +6,9 @@ Permite seleccionar y previsualizar imágenes JPG/PNG, pero todavía no hay mode
 
 ## Organización
 
+Para preparar y activar el acceso real posteriormente, consulta [SUPABASE_SETUP.md](SUPABASE_SETUP.md).
+El modo mock sigue siendo el predeterminado; `AUTH_MODE=supabase` selecciona el repositorio real.
+
 - `lib/presentation/views/`: pantallas y navegación, que observan `ChangeNotifier`.
 - `lib/presentation/viewmodels/`: estado y acciones de autenticación, análisis y apariencia.
 - `lib/presentation/widgets/` y `theme/`: componentes visuales y paletas.

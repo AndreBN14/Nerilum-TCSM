@@ -96,6 +96,7 @@ class AppDependencies {
   AuthViewModel createAuthViewModel() => AuthViewModel(
     loginAccount: LoginAccount(accountRepository),
     registerAccount: RegisterAccount(accountRepository),
+    resendConfirmation: ResendConfirmation(accountRepository),
   );
 
   void dispose() {

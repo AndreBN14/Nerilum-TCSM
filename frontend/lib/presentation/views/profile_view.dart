@@ -38,8 +38,8 @@ class ProfileView extends StatelessWidget {
         ),
         const SizedBox(height: 30),
         _ProfileTile(
-          title: account?.name ?? 'Cuenta demo',
-          subtitle: account?.email ?? 'Cuenta de demostración',
+          title: account?.name ?? 'Mi cuenta',
+          subtitle: account?.email ?? 'Sin sesión',
           icon: Icons.person,
           tall: true,
           onTap: () => _openPage(context, 'Mi cuenta', _AccountInfo(account)),
@@ -66,12 +66,18 @@ class ProfileView extends StatelessWidget {
           onTap: () => _openPage(
             context,
             'Privacidad y datos',
-            const Text(
-              'Esta demostración permite seleccionar una imagen local para verla en pantalla. '
-              'No se envía a un servicio de análisis. El historial de la cuenta demo '
-              'contiene únicamente ejemplos precargados, no resultados ni imágenes reales. '
-              'El selector del dispositivo puede crear archivos temporales; la selección en memoria '
-              'deja de estar disponible al cerrar la aplicación.',
+            Text(
+              AppScope.of(context).accountRepository.isDemo
+                  ? 'Esta demostración permite seleccionar una imagen local para verla en pantalla. '
+                        'No se envía a un servicio de análisis. El historial de la cuenta demo '
+                        'contiene únicamente ejemplos precargados, no resultados ni imágenes reales. '
+                        'El selector del dispositivo puede crear archivos temporales; la selección en memoria '
+                        'deja de estar disponible al cerrar la aplicación.'
+                  : 'Supabase Auth gestiona el acceso y tu perfil de usuario. '
+                        'Las imágenes seleccionadas se previsualizan localmente; '
+                        'todavía no se envían a un servicio de análisis. '
+                        'El selector puede crear archivos temporales y la selección '
+                        'en memoria deja de estar disponible al cerrar la aplicación.',
             ),
           ),
         ),
@@ -113,7 +119,7 @@ class _AccountInfo extends StatelessWidget {
       children: [
         Text('Nombre', style: TextStyle(color: colors.textSecondary)),
         Text(
-          account?.name ?? 'Cuenta demo',
+          account?.name ?? 'Mi cuenta',
           style: const TextStyle(fontSize: 18),
         ),
         const SizedBox(height: 22),
@@ -126,9 +132,12 @@ class _AccountInfo extends StatelessWidget {
           style: const TextStyle(fontSize: 18),
         ),
         const SizedBox(height: 22),
-        const Text(
-          'Esta demostración recuerda nombre y correo en el dispositivo hasta '
-          'cerrar sesión. No se guarda la contraseña.',
+        Text(
+          AppScope.of(context).accountRepository.isDemo
+              ? 'Esta demostración recuerda nombre y correo en el dispositivo hasta '
+                    'cerrar sesión. No se guarda la contraseña.'
+              : 'Tu identidad es gestionada por Supabase Auth. La sesión se restaura '
+                    'mediante su SDK hasta que cierres sesión o expire su autorización.',
         ),
       ],
     );

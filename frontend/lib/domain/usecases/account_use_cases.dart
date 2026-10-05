@@ -26,3 +26,10 @@ class CurrentAccount {
   final AccountRepository repository;
   Account? call() => repository.currentAccount;
 }
+
+class ResendConfirmation {
+  const ResendConfirmation(this.repository);
+  final AccountRepository repository;
+  Future<void> call(String email) =>
+      repository.resendConfirmation(email.trim());
+}

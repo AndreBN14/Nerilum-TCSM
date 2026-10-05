@@ -20,9 +20,23 @@ La aplicación sigue **View → ViewModel (`ChangeNotifier`) → UseCase → Rep
 
 ## Integración futura con FastAPI
 
+### Autenticación preparada con Supabase
+
+`AUTH_MODE=supabase` configura `SupabaseAccountRepository` y
+`SupabaseAccountDataSource` en el arranque. El SDK administra la sesión real
+y los enlaces de confirmación; el registro muestra instrucciones y permite reenviar.
+`AUTH_MODE=mock` conserva las cuentas de demostración como valor predeterminado.
+No se usan los identificadores mock de SharedPreferences para autenticar cuentas reales.
+La configuración y las migraciones están descritas en `SUPABASE_SETUP.md`.
+El SQL de perfiles se encuentra en `supabase/migrations/` (raíz del repositorio),
+con una copia idéntica en `infraestructura/BD/supabase/`.
+El adaptador aún requiere validación contra un proyecto Supabase real.
+
 1. Acordar y documentar rutas, autenticación, formato de carga, versión y esquema JSON del backend; no se presupone un contrato existente.
 2. Añadir un data source remoto con un cliente HTTP configurable (URL base, tiempos de espera, autenticación y manejo de errores). Transformar sus DTO en los modelos `Account` y `AnalysisResult` sin exponer JSON en la presentación.
-3. Implementar `AccountRepository` y `AnalysisRepository` mediante ese data source e intercambiarlos en `AppDependencies`. Los casos de uso, ViewModels y pantallas mantienen sus contratos.
+3. La autenticación ya tiene un adaptador Supabase; FastAPI podrá validar los tokens
+   de Supabase cuando se implemente el análisis remoto. Implementar `AnalysisRepository`
+   mediante el data source remoto e intercambiarlo en `AppDependencies`.
 4. Definir almacenamiento y retención de imágenes/historial antes de persistir archivos o mostrar miniaturas. Documentar clases, puntuaciones y límites del modelo junto al resultado orientativo.
 
 La API y la inferencia **no están implementadas** en este prototipo. `MockAnalysisDataSource.analyze` impide resultados ficticios para imágenes elegidas hasta disponer de un servicio real.

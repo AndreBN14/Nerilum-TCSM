@@ -27,6 +27,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _obscureConfirmation = true;
   bool _acceptedDemo = false;
   bool _submitted = false;
+  bool _confirmationSent = false;
 
   bool get _registering => widget.mode == AuthMode.register;
 
@@ -65,7 +66,7 @@ class _AuthScreenState extends State<AuthScreen> {
     setState(() => _submitted = true);
     if (!_formKey.currentState!.validate()) return;
     if (_registering) {
-      if (!_acceptedDemo) {
+      if (_viewModel!.isDemo && !_acceptedDemo) {
         _message('Acepta continuar en modo demostración.');
         return;
       }
@@ -76,7 +77,11 @@ class _AuthScreenState extends State<AuthScreen> {
       );
       if (!mounted) return;
       if (created) {
-        Navigator.of(context).pushReplacementNamed('/login');
+        if (_viewModel!.requiresEmailConfirmation) {
+          setState(() => _confirmationSent = true);
+        } else {
+          Navigator.of(context).pushReplacementNamed('/login');
+        }
       } else if (_viewModel!.error != null) {
         _message(_viewModel!.error!);
       }
@@ -137,6 +142,59 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = NerilumPalette.of(context);
+    if (_confirmationSent) {
+      return Scaffold(
+        body: BrandBackdrop(
+          child: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.mark_email_read_outlined, size: 64),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Confirma tu correo',
+                      style: TextStyle(fontSize: 26),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Si el registro corresponde a una cuenta nueva, recibirás un enlace en '
+                      '${_email.text.trim()}. Revisa también la carpeta de spam. '
+                      'Confirma tu correo antes de ingresar.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Navigator.of(context).pushReplacementNamed('/login'),
+                      child: const Text('Ir a iniciar sesión'),
+                    ),
+                    TextButton(
+                      onPressed: _viewModel!.busy
+                          ? null
+                          : () async {
+                              final sent = await _viewModel!.resend(
+                                _email.text,
+                              );
+                              if (!mounted) return;
+                              _message(
+                                sent
+                                    ? 'Solicitud de reenvío enviada. Revisa tu correo.'
+                                    : _viewModel!.error!,
+                              );
+                            },
+                      child: const Text('Reenviar confirmación'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: BrandBackdrop(
         child: SafeArea(
@@ -226,19 +284,20 @@ class _AuthScreenState extends State<AuthScreen> {
                         const SizedBox(height: 12),
                         _passwordField(confirmation: true),
                         const SizedBox(height: 12),
-                        CheckboxListTile(
-                          value: _acceptedDemo,
-                          onChanged: (value) =>
-                              setState(() => _acceptedDemo = value ?? false),
-                          title: const Text(
-                            'Acepto continuar en modo demostración',
-                            style: TextStyle(fontSize: 14),
+                        if (_viewModel!.isDemo)
+                          CheckboxListTile(
+                            value: _acceptedDemo,
+                            onChanged: (value) =>
+                                setState(() => _acceptedDemo = value ?? false),
+                            title: const Text(
+                              'Acepto continuar en modo demostración',
+                              style: TextStyle(fontSize: 14),
+                            ),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: colors.mint,
+                            checkColor: colors.mintDarkText,
                           ),
-                          controlAffinity: ListTileControlAffinity.leading,
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: colors.mint,
-                          checkColor: colors.mintDarkText,
-                        ),
                       ] else ...[
                         Align(
                           alignment: Alignment.centerRight,
@@ -266,7 +325,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           ],
                         ),
                       ),
-                      if (!_registering) ...[
+                      if (!_registering && _viewModel!.isDemo) ...[
                         const SizedBox(height: 14),
                         Text(
                           'Demo: demo@nerilum.app / Demo1234',

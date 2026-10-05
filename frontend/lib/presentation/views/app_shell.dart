@@ -105,7 +105,7 @@ class AppShell extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Cerrar sesión'),
-        content: const Text('¿Quieres salir de tu cuenta de demostración?'),
+        content: const Text('¿Quieres salir de tu cuenta?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

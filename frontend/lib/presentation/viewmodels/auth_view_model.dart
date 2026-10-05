@@ -3,10 +3,36 @@ import 'package:flutter/foundation.dart';
 import '../../domain/usecases/account_use_cases.dart';
 
 class AuthViewModel extends ChangeNotifier {
-  AuthViewModel({required this.loginAccount, required this.registerAccount});
+  AuthViewModel({
+    required this.loginAccount,
+    required this.registerAccount,
+    required this.resendConfirmation,
+  });
 
   final LoginAccount loginAccount;
   final RegisterAccount registerAccount;
+  final ResendConfirmation resendConfirmation;
+  bool get isDemo => registerAccount.repository.isDemo;
+  bool get requiresEmailConfirmation =>
+      registerAccount.repository.requiresEmailConfirmation;
+
+  Future<bool> resend(String email) async {
+    if (busy) return false;
+    busy = true;
+    error = null;
+    notifyListeners();
+    try {
+      await resendConfirmation(email);
+      return true;
+    } catch (_) {
+      error = 'No se pudo reenviar el correo. Espera unos minutos e inténtalo de nuevo.';
+      return false;
+    } finally {
+      busy = false;
+      if (!_disposed) notifyListeners();
+    }
+  }
+
   bool busy = false;
   String? error;
   bool _disposed = false;
@@ -19,11 +45,11 @@ class AuthViewModel extends ChangeNotifier {
     try {
       final account = await loginAccount(email, password);
       if (account == null) {
-        error = 'Correo o contraseña incorrectos para esta demostración.';
+        error = 'Correo o contraseña incorrectos.';
       }
       return account != null;
     } catch (_) {
-      error = 'No se pudo iniciar sesión. Inténtalo de nuevo.';
+      error = 'No se pudo iniciar sesión. Comprueba tu conexión, tus datos y la confirmación del correo.';
       return false;
     } finally {
       busy = false;
@@ -38,7 +64,11 @@ class AuthViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       final created = await registerAccount(email, password, name);
-      if (!created) error = 'Ese correo ya tiene una cuenta de demostración.';
+      if (!created) {
+        error = isDemo
+            ? 'Ese correo ya tiene una cuenta de demostración.'
+            : 'No se pudo registrar la cuenta. Comprueba tus datos.';
+      }
       return created;
     } catch (_) {
       error = 'No se pudo crear la cuenta. Inténtalo de nuevo.';
