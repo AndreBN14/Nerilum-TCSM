@@ -6,6 +6,20 @@ from starlette.exceptions import HTTPException
 from app.schemas.error import ErrorDetail, ErrorResponse
 
 
+class ApiException(HTTPException):
+    """HTTPException con un código de error explícito del contrato."""
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=message, headers=headers)
+        self.code = code
+
+
 def error_response(status: int, code: str, message: str) -> JSONResponse:
     body = ErrorResponse(error=ErrorDetail(code=code, message=message))
     return JSONResponse(status_code=status, content=body.model_dump())
@@ -30,7 +44,7 @@ def register_error_handlers(app: FastAPI) -> None:
         }
         response = error_response(
             exc.status_code,
-            codes.get(exc.status_code, "http_error"),
+            getattr(exc, "code", None) or codes.get(exc.status_code, "http_error"),
             str(exc.detail),
         )
         if exc.headers:
