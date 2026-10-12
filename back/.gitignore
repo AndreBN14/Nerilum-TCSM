@@ -1,0 +1,14 @@
+# Entorno y secretos
+.env
+
+# Virtualenv y cachés
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Datos locales generados por la app
+data/
+
+# Artefacto del modelo (se sirve sin versionar en el repo)
+app/models/*.onnx

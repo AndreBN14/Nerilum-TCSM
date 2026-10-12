@@ -2,9 +2,10 @@ from dataclasses import dataclass
 
 import httpx
 
-from app.core.config import Settings
+from app.core.config import BACK_ROOT, Settings
 from app.core.security import SupabaseJWTVerifier, TokenVerifier
-from app.services.inference import InferenceStatus, UnavailableInference
+from app.services.analyses import AnalysisRepository, SqliteAnalysisRepository
+from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
 
 
 @dataclass
@@ -13,11 +14,39 @@ class Services:
 
     inference: InferenceStatus
     token_verifier: TokenVerifier
+    analyses: AnalysisRepository
 
     async def aclose(self) -> None:
         closer = getattr(self.token_verifier, "aclose", None)
         if closer is not None:
             await closer()
+        closer = getattr(self.analyses, "close", None)
+        if closer is not None:
+            closer()
+
+
+def _resolve_model_path(settings: Settings):
+    if settings.model_path is None:
+        return None
+    path = settings.model_path
+    if not path.is_absolute():
+        path = BACK_ROOT / path
+    return path
+
+
+def _build_inference(settings: Settings) -> InferenceStatus:
+    path = _resolve_model_path(settings)
+    if path is None:
+        # MODEL_PATH no configurado: sin modelo conectado.
+        return UnavailableInference()
+    return OnnxClassifier(
+        path,
+        resize_mode=settings.model_resize_mode,
+        softmax=settings.model_softmax,
+        input_size=settings.model_input_size,
+        model_name=settings.model_name,
+        model_version=settings.model_version,
+    )
 
 
 def create_services(settings: Settings) -> Services:
@@ -33,5 +62,18 @@ def create_services(settings: Settings) -> Services:
         timeout=settings.jwks_timeout_seconds,
         client=client,
     )
-    # MODEL_PATH no implica que exista un runtime o un modelo validado.
-    return Services(inference=UnavailableInference(), token_verifier=verifier)
+
+    inference = _build_inference(settings)
+    analyses = SqliteAnalysisRepository(settings.database_path)
+
+    services = Services(inference=inference, token_verifier=verifier, analyses=analyses)
+
+    # Semilla de demostración: solo desarrollo, opcional e idempotente.
+    if (
+        settings.app_env == "development"
+        and settings.seed_demo
+        and settings.seed_demo_account_id is not None
+    ):
+        analyses.seed_demo(str(settings.seed_demo_account_id))
+
+    return services

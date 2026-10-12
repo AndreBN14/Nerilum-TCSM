@@ -1,13 +1,14 @@
 # Nerilum · backend FastAPI
 
-Backend de Nerilum. **Fase 1 completada**: verificación de JWT de Supabase Auth
-(ES256 vía JWKS) y endpoints `GET /api/v1/health` y `GET /api/v1/auth/me`.
+Backend de Nerilum: verificación de **JWT de Supabase Auth** (ES256 vía JWKS) y
+**historial de análisis de imágenes** (`POST/GET /api/v1/analyses`) con el modelo
+ONNX exportado de YOLOv8n-cls, persistencia SQLite y aislamiento por `account_id`.
 
-Las fases 2 (persistencia PostgreSQL/Supabase), 3 (endpoint de análisis sin
-modelo) y 4 (integración ONNX) están **pendientes**. No hay conexión a base de
-datos, ni persistencia de análisis, ni inferencia. La autenticación de usuarios
-la gestiona Supabase Auth desde Flutter; este backend **no** implementa
-registro, login, refresh ni logout.
+La autenticación de usuarios la gestiona Supabase Auth desde Flutter; este
+backend **no** implementa registro, login, refresh ni logout. Todo lo que el
+cliente envía (token incluido) se valida contra Supabase; el `account_id` de cada
+análisis se deriva **exclusivamente** del claim `sub` verificado del token, nunca
+de campos del formulario.
 
 > Resultado orientativo. No constituye un diagnóstico médico.
 
@@ -15,6 +16,7 @@ registro, login, refresh ni logout.
 
 ```text
 back/
+├── Nerilum_API_Contract.md    # Contrato canónico
 ├── app/
 │   ├── main.py                 # Factoría FastAPI, lifespan y routers
 │   ├── __main__.py             # Arranque que usa HOST/PORT del entorno
@@ -22,25 +24,24 @@ back/
 │   │   ├── config.py           # Settings y lectura de back/.env
 │   │   ├── errors.py           # ApiException + formato de errores
 │   │   └── security.py         # SupabaseJWTVerifier (ES256 + JWKS)
-│   ├── models/                 # Artefactos de inferencia aún pendientes
-│   ├── schemas/                # DTO HTTP (account, health, error)
+│   ├── models/                 # Artefactos de inferencia (no versionados)
+│   ├── schemas/                # DTO HTTP (account, health, analysis, error)
 │   ├── routes/
-│   │   ├── dependencies.py     # get_services, get_current_user
+│   │   ├── dependencies.py     # get_services, get_app_settings, get_current_user
 │   │   ├── health.py           # GET /api/v1/health
 │   │   ├── auth.py             # GET /api/v1/auth/me
-│   │   └── analyses.py         # Reservado (Fase 3)
+│   │   └── analyses.py         # POST / GET / GET /analyses
 │   └── services/
 │       ├── container.py        # Composición e inyección de servicios
-│       └── inference.py        # Estado de disponibilidad sin modelo
-├── tests/
-│   ├── conftest.py             # Claves EC P-256 y JWKS simulados
-│   ├── test_security.py        # Verificador JWT/JWKS
-│   ├── test_auth.py            # Endpoints health/me
-│   └── test_routes.py          # Contrato y OpenAPI
+│       ├── inference.py        # OnnxClassifier / UnavailableInference
+│       ├── images.py           # Validación de imágenes subidas
+│       └── analyses.py         # Repositorio SQLite del historial
+├── tests/                      # Claves EC P-256 y JWKS simulados, sin red real
+├── data/                       # SQLite local generado por la app (ignorado)
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── pyproject.toml
-├── .env                        # Local, ignorado por Git
+├── .gitignore
 └── .env.example                # Plantilla sin secretos
 ```
 
@@ -51,6 +52,7 @@ Desde `back/`, con Python 3.11 o superior:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env   # y completar SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY
 .\.venv\Scripts\python.exe -m app
 ```
 
@@ -63,48 +65,70 @@ Para pruebas (usa claves EC y JWKS simulados, sin red ni Supabase real):
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-## Endpoints de la Fase 1
+## Endpoints
 
 | Método | Ruta | Auth | Descripción |
 | --- | --- | --- | --- |
-| GET | `/api/v1/health` | No | Estado de la API. `model_ready=false` hasta la Fase 4. |
+| GET | `/api/v1/health` | No | Estado de la API y del modelo. |
 | GET | `/api/v1/auth/me` | Bearer | Identidad del JWT validado. |
+| POST | `/api/v1/analyses` | Bearer | Sube una imagen y guarda el análisis. |
+| GET | `/api/v1/analyses` | Bearer | Historial paginado del usuario. |
+| GET | `/api/v1/analyses/{id}` | Bearer | Detalle de un análisis propio. |
 
-Respuesta de `/api/v1/health` (público, funciona sin configuración de Supabase):
+`POST /api/v1/analyses` es multipart: `file` (JPG/JPEG o PNG, máx. 10 MB) y un
+opcional `display_name` (≤120 caracteres). Errores: `415` formato no admitido,
+`400` imagen corrupta, `413` exceso de tamaño, `503` modelo no disponible.
+
+Respuesta de `/api/v1/health` (público):
 
 ```json
-{ "status": "ok", "model_ready": false }
+{
+  "status": "ok",
+  "model_ready": true,
+  "model_name": "yolov8n-cls",
+  "model_version": "v0.1"
+}
 ```
 
-Respuesta de `/api/v1/auth/me`:
+Respuesta de `POST /api/v1/analyses` (201):
 
 ```json
-{ "account": { "id": "<uuid>", "email": "usuario@example.com" } }
+{
+  "id": "an_1a2b3c4d5e6f",
+  "category": "NonDemented",
+  "probability": 0.9274,
+  "scores": {
+    "MildDemented": 0.0210,
+    "ModerateDemented": 0.0112,
+    "NonDemented": 0.9274,
+    "VeryMildDemented": 0.0404
+  },
+  "display_name": "MRI 1",
+  "created_at": "2026-10-09T15:30:00.123456Z",
+  "is_demo": false,
+  "model": { "name": "yolov8n-cls", "version": "v0.1", "dataset": "ADNI" },
+  "disclaimer": "Resultado orientativo. No constituye un diagnóstico médico."
+}
 ```
 
-El `id` procede del claim `sub` verificado; `email` es `null` si no está
-presente. No se consulta ninguna tabla de usuarios.
+`probability` es la del `category` (argmax); `scores` incluye las cuatro clases.
+`GET /api/v1/analyses` acepta `limit` (1-100, por defecto 50) y `offset` (0 por
+defecto). Un análisis ajeno o inexistente responde `404 not_found`.
 
-Al pegar el token se limpian espacios y comillas, y se descarta un segundo
-prefijo `Bearer` accidental (por escribir `Bearer` en *Authorize* aunque Swagger
-ya lo añade). Aun así, lo correcto es pegar **solo** el `access_token`.
+## Persistencia y modelo
 
-### Autorizar en `/docs` (Swagger UI)
-
-El backend declara el esquema `HTTPBearer` (`type: http`, `scheme: bearer`,
-`bearerFormat: JWT`), por lo que Swagger UI muestra el botón **Authorize** y
-`/api/v1/auth/me` aparece con el candado como requisito de seguridad.
-
-1. Abrir `http://127.0.0.1:8000/docs` y pulsar **Authorize**.
-2. Pegar **solo** el `access_token` de Supabase: Swagger añade el prefijo
-   `Bearer ` automáticamente y envía `Authorization: Bearer <token>`.
-3. Pulsar **Authorize**/**Close** y ejecutar `GET /api/v1/auth/me`.
-
-Si el botón no aparece, el servidor se inició antes de cargar estos cambios o el
-navegador cacheó el spec: reiniciar `uvicorn` y recargar. Las respuestas de
-`/docs` y `/openapi.json` ya se sirven con `Cache-Control: no-store` para
-evitarlo. Recuerda que la verificación real exige un token legítimo del proyecto
-Supabase; sin él, `/auth/me` responde `401 invalid_token`.
+- **SQLite** local en `data/nerilum.db` (tabla `analyses`, índice por
+  `account_id` + `created_at DESC`). No se almacenan imágenes.
+- El modelo se lee de `MODEL_PATH`; las etiquetas se toman de los metadatos ONNX.
+  El artefacto es un **YOLOv8n-cls** cuya salida ONNX ya está normalizada
+  (softmax integrado), por lo que `MODEL_SOFTMAX=false`. El preprocesado por
+  defecto es `center_crop`, que reproduce el pipeline de inferencia de referencia
+  de Ultralytics (Resize del lado corto + recorte central). Los argumentos exactos
+  del entrenamiento no están disponibles, así que la equivalencia completa con el
+  entrenamiento **aún no está demostrada**.
+- `SEED_DEMO` (solo `APP_ENV=development`), con `SEED_DEMO_ACCOUNT_ID`, crea
+  registros demo idempotentes marcados `is_demo=true`. La API nunca genera
+  análisis marcados como demo.
 
 ## Verificación del JWT
 
@@ -112,24 +136,10 @@ Supabase; sin él, `/auth/me` responde `401 invalid_token`.
 
 - Obtiene las claves públicas de
   `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` mediante `httpx.AsyncClient`.
-- Solo admite el algoritmo `ES256` (se rechazan `none`, `HS256`, `RS256`, …), y
-  solo usa claves `kty=EC` y `crv=P-256`.
-- Valida firma, `iss`, `aud`, `exp` y, si está presente, `nbf`. Exige mediante
-  `require` las claims `exp`, `iss`, `aud` y `sub`.
-- El emisor efectivo es `SUPABASE_JWT_ISSUER` o, por defecto,
-  `{SUPABASE_URL}/auth/v1`.
-- El claim `sub` debe ser un UUID válido; se construye `AuthenticatedUser`
-  únicamente después de verificar firma y claims.
-- La tolerancia temporal (`JWT_LEEWAY_SECONDS`) es `0` por defecto y no se
-  aplica automáticamente.
-
-### Caché y rotación de claves
-
-- Caché en memoria por `kid` con TTL (`JWKS_CACHE_TTL_SECONDS`). Sin Redis.
-- Ante un `kid` desconocido y si el intervalo mínimo lo permite, se refresca el
-  JWKS una sola vez; `asyncio.Lock` evita refrescos concurrentes duplicados.
-- `JWKS_MIN_REFRESH_INTERVAL_SECONDS` limita la frecuencia de refrescos y
-  fracasos repetidos, evitando peticiones ilimitadas ante `kid` arbitrarios.
+- Solo admite `ES256`; solo usa claves `kty=EC`, `crv=P-256`.
+- Valida firma, `iss`, `aud`, `exp` y, si está presente, `nbf`.
+- El claim `sub` debe ser un UUID válido.
+- Caché en memoria por `kid` con TTL y refresco único ante `kid` desconocido.
 
 ### Política de errores
 
@@ -138,26 +148,19 @@ Supabase; sin él, `/auth/me` responde `401 invalid_token`.
 | Firma/claims inválidos, `alg` ≠ ES256, `sub` inválido | `401 invalid_token` |
 | JWKS responde y el `kid` no existe o su clave no sirve para ES256 | `401 invalid_token` |
 | JWKS no disponible y no hay clave utilizable | `503 service_unavailable` |
-| `kid` desconocido y el intervalo mínimo impide refrescar (sin conclusión) | `503 service_unavailable` |
-| Clave en caché vigente y firma inválida | `401 invalid_token` |
-| Verificación no configurada (`SUPABASE_URL`/emisor ausentes) | `503 service_unavailable` |
-
-Una clave caducada no se reutiliza indefinidamente. No se registran tokens ni
-datos sensibles. La ausencia de configuración de Supabase no impide arrancar ni
-responde en `/api/v1/health`, pero los endpoints protegidos fallan con `503`.
+| Verificación no configurada (`SUPABASE_URL` ausente) | `503 service_unavailable` |
 
 ## Configuración
 
-`core/config.py` carga `back/.env` con `pydantic-settings`, independientemente
-del directorio desde el que se importe el módulo. Las variables del proceso
-tienen prioridad.
+`core/config.py` carga `back/.env` con `pydantic-settings`. Las variables del
+proceso tienen prioridad.
 
 | Variable | Predeterminado | Uso |
 | --- | --- | --- |
-| `APP_ENV` | `development` | `development`, `test` o `production`; controla la recarga. |
+| `APP_ENV` | `development` | `development`, `test` o `production`. |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Dirección y puerto de `python -m app`. |
 | `SUPABASE_URL` | vacío | Proyecto Supabase; base del JWKS y del emisor. |
-| `SUPABASE_PUBLISHABLE_KEY` | vacío | Reservado para futuros adaptadores; no se usa en Fase 1. |
+| `SUPABASE_PUBLISHABLE_KEY` | vacío | Clave pública para la web/frontend. |
 | `SUPABASE_JWT_AUDIENCE` | `authenticated` | Audiencia esperada del JWT. |
 | `SUPABASE_JWT_ISSUER` | `{SUPABASE_URL}/auth/v1` | Emisor esperado (opcional). |
 | `JWT_LEEWAY_SECONDS` | `0` | Tolerancia temporal de `exp`/`nbf`. |
@@ -165,20 +168,24 @@ tienen prioridad.
 | `JWKS_MIN_REFRESH_INTERVAL_SECONDS` | `60` | Mínimo entre refrescos/fallos de JWKS. |
 | `JWKS_TIMEOUT_SECONDS` | `5` | Timeout de la petición al JWKS. |
 | `CORS_ORIGINS` | `[]` | Lista JSON de orígenes web permitidos. |
-| `DATABASE_URL` | vacío | **Fase 2**, sin uso en esta fase. |
-| `MODEL_PATH` | vacío | **Fase 4**; no carga ningún runtime por sí solo. |
+| `DATABASE_PATH` | `back/data/nerilum.db` | Ubicación del SQLite local. |
+| `MODEL_PATH` | vacío | Ruta al artefacto ONNX (`app/models/best.onnx`). |
+| `MODEL_NAME` / `MODEL_VERSION` | `yolov8n-cls` / `v0.1` | Metadatos expuestos. |
+| `MODEL_DATASET` | `Alzheimer MRI Dataset (Kaggle)` | Dataset de entrenamiento. |
+| `MODEL_INPUT_SIZE` | vacío | Tamaño de entrada; si falta, el declarado en ONNX. |
+| `MODEL_RESIZE_MODE` | `center_crop` | `letterbox`, `center_crop` o `stretch`. Por defecto el pipeline de referencia de Ultralytics. |
+| `MODEL_SOFTMAX` | `false` | Aplica softmax solo si el modelo devuelve logits; este ONNX ya normaliza. |
+| `MAX_IMAGE_BYTES` | `10485760` | Tamaño máximo de las imágenes subidas. |
+| `MAX_IMAGE_DIMENSION` | `4096` | Máximo alto/ancho en píxeles. |
+| `SEED_DEMO` | `false` | Activa registros demo (solo desarrollo). |
+| `SEED_DEMO_ACCOUNT_ID` | vacío | UUID del usuario que recibe los registros demo. |
 
 No guardar claves privilegiadas ni contraseñas en el repositorio. Flutter móvil
 no depende de CORS; la configuración del backend no activa Supabase en Flutter.
 
-## Flujo de desarrollo (fases siguientes)
+## Contrato
 
-1. **Fase 2**: migración de `analyses`, capa de persistencia en PostgreSQL de
-   Supabase, endpoints de historial y detalle, con propiedad derivada del JWT.
-2. **Fase 3**: interfaz `Classifier` y `POST /api/v1/analyses` sin asumir el
-   modelo; estado `model_unavailable`.
-3. **Fase 4**: `OnnxClassifier` con el modelo real verificado.
-
-Referencia vigente: `context/Diseño Back/Nerilum_API_Contract_Vigente.md`.
-La migración de perfiles sigue en `supabase/migrations/`, con copia en
-`infraestructura/BD/supabase/`. Esta base no crea tablas de análisis.
+El contrato de la API es `Nerilum_API_Contract.md` (canónico). La copia en
+`context/Diseño Back/Nerilum_API_Contract.md` es una referencia histórica y el
+histórico `context/Diseño Back/Nerilum_API_Contract_Vigente.md` queda
+descartado por contradicciones con la implementación actual.

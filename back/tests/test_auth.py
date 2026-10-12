@@ -19,12 +19,19 @@ def _client(stub) -> TestClient:
     return TestClient(build_app(build_verifier(stub)))
 
 
-def test_health_is_public_without_supabase_config():
-    app = create_app(Settings(_env_file=None))
+def test_health_is_public_without_supabase_config(tmp_path):
+    app = create_app(
+        Settings(_env_file=None, model_path=None, database_path=tmp_path / "h.db")
+    )
     with TestClient(app) as client:
         response = client.get("/api/v1/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "model_ready": False}
+    assert response.json() == {
+        "status": "ok",
+        "model_ready": False,
+        "model_name": None,
+        "model_version": None,
+    }
 
 
 def test_me_rejects_missing_credentials(stub):

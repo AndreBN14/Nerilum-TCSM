@@ -1,11 +1,19 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACK_ROOT = Path(__file__).resolve().parents[2]
+
+DEFAULT_CLASSES = [
+    "MildDemented",
+    "ModerateDemented",
+    "NonDemented",
+    "VeryMildDemented",
+]
 
 
 class Settings(BaseSettings):
@@ -30,7 +38,18 @@ class Settings(BaseSettings):
     jwks_timeout_seconds: float = Field(default=5.0, gt=0)
     cors_origins: list[str] = Field(default_factory=list)
     database_url: str | None = None
+    database_path: Path = Field(default=BACK_ROOT / "data" / "nerilum.db")
     model_path: Path | None = None
+    model_name: str = "yolov8n-cls"
+    model_version: str = "v0.1"
+    model_dataset: str = "Alzheimer MRI Dataset (Kaggle)"
+    model_input_size: int | None = Field(default=None, ge=32)
+    model_resize_mode: Literal["letterbox", "center_crop", "stretch"] = "center_crop"
+    model_softmax: bool = False
+    max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
+    max_image_dimension: int = Field(default=4096, ge=16)
+    seed_demo: bool = False
+    seed_demo_account_id: UUID | None = None
 
     @property
     def resolved_issuer(self) -> str | None:

@@ -8,3 +8,10 @@ def test_env_file_and_process_override(tmp_path, monkeypatch) -> None:
     settings = Settings(_env_file=env_file)
     assert settings.port == 8200
     assert settings.cors_origins == ["http://localhost:3000"]
+
+
+def test_default_inference_settings_match_onnx_artifact() -> None:
+    settings = Settings(_env_file=None)
+    assert settings.model_name == "yolov8n-cls"
+    assert settings.model_resize_mode == "center_crop"
+    assert settings.model_softmax is False

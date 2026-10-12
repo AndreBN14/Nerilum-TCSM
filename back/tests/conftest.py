@@ -8,8 +8,11 @@ usan tokens ni claves reales de Supabase.
 from __future__ import annotations
 
 import base64
+import tempfile
 import time
 from collections.abc import Callable
+from pathlib import Path
+from uuid import uuid4
 
 import httpx
 import jwt
@@ -20,8 +23,9 @@ from fastapi import FastAPI
 from app.core.config import Settings
 from app.core.security import SupabaseJWTVerifier
 from app.main import create_app
+from app.services.analyses import SqliteAnalysisRepository
 from app.services.container import Services
-from app.services.inference import UnavailableInference
+from app.services.inference import InferenceStatus, UnavailableInference
 
 SUPABASE_URL = "https://test-project.supabase.co"
 ISSUER = f"{SUPABASE_URL}/auth/v1"
@@ -142,10 +146,51 @@ def build_verifier(
     )
 
 
-def build_app(verifier: SupabaseJWTVerifier) -> FastAPI:
-    settings = Settings(_env_file=None, supabase_url=SUPABASE_URL)
+class FakeInference:
+    """Inferencia determinista para las rutas: no toca onnxruntime."""
+
+    ready: bool = True
+    model_name = "fake-cls"
+    model_version = "test"
+
+    def __init__(
+        self,
+        scores: dict[str, float] | None = None,
+        *,
+        ready: bool = True,
+    ) -> None:
+        self._scores = scores or {
+            "MildDemented": 0.1,
+            "ModerateDemented": 0.2,
+            "NonDemented": 0.5,
+            "VeryMildDemented": 0.2,
+        }
+        self.ready = ready
+
+    def analyze(self, image: object) -> dict[str, float]:
+        return dict(self._scores)
+
+
+def build_app(
+    verifier: SupabaseJWTVerifier,
+    *,
+    inference: InferenceStatus | None = None,
+    db_path: Path | None = None,
+    settings_overrides: dict[str, object] | None = None,
+) -> FastAPI:
+    overrides: dict[str, object] = {
+        "supabase_url": SUPABASE_URL,
+        "database_path": db_path or Path(tempfile.gettempdir()) / f"nrl-{uuid4().hex}.db",
+    }
+    if settings_overrides:
+        overrides.update(settings_overrides)
+    # model_path=None a propósito: evita que un MODEL_PATH del entorno active
+    # el modelo real en pruebas que no lo piden explícitamente.
+    settings = Settings(_env_file=None, model_path=None, **overrides)
     services = Services(
-        inference=UnavailableInference(), token_verifier=verifier
+        inference=inference if inference is not None else UnavailableInference(),
+        token_verifier=verifier,
+        analyses=SqliteAnalysisRepository(settings.database_path),
     )
     return create_app(settings, services)
 

@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core.config import Settings
 from app.core.errors import ApiException
 from app.core.security import (
     AuthenticatedUser,
@@ -10,6 +11,15 @@ from app.core.security import (
     JWKSUnavailableError,
 )
 from app.services.container import Services
+
+
+def get_services(request: Request) -> Services:
+    return request.app.state.services
+
+
+def get_app_settings(request: Request) -> Settings:
+    return request.app.state.settings
+
 
 _bearer_scheme = HTTPBearer(
     auto_error=False,
@@ -19,10 +29,6 @@ _bearer_scheme = HTTPBearer(
         "Introduce solo el access_token; Swagger añade el prefijo 'Bearer '."
     ),
 )
-
-
-def get_services(request: Request) -> Services:
-    return request.app.state.services
 
 
 def _normalize_token(raw: str) -> str:

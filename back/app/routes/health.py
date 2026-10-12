@@ -11,4 +11,8 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health", response_model=HealthResponse)
 def health(services: Annotated[Services, Depends(get_services)]) -> HealthResponse:
-    return HealthResponse(model_ready=services.inference.ready)
+    return HealthResponse(
+        model_ready=services.inference.ready,
+        model_name=services.inference.model_name,
+        model_version=services.inference.model_version,
+    )
