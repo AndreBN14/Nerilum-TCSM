@@ -16,6 +16,7 @@ from app.core.errors import ApiException
 from app.core.security import AuthenticatedUser
 from app.routes.dependencies import get_app_settings, get_current_user, get_services
 from app.schemas.analysis import AnalysisList, AnalysisOut, ModelMetadata
+from app.schemas.error import COMMON_ERRORS
 from app.services.analyses import AnalysisRecord
 from app.services.images import validate_image
 from app.services.inference import DISCLAIMER, InferenceError
@@ -60,7 +61,7 @@ def _to_out(record: AnalysisRecord, settings: Settings) -> AnalysisOut:
     )
 
 
-@router.post("", response_model=AnalysisOut, status_code=201)
+@router.post("", response_model=AnalysisOut, status_code=201, responses=COMMON_ERRORS)
 async def create_analysis(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     services: Annotated[Services, Depends(get_services)],
@@ -102,7 +103,7 @@ async def create_analysis(
     return _to_out(persisted, settings)
 
 
-@router.get("", response_model=AnalysisList)
+@router.get("", response_model=AnalysisList, responses=COMMON_ERRORS)
 def list_analyses(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
     services: Annotated[Services, Depends(get_services)],
@@ -121,7 +122,7 @@ def list_analyses(
     )
 
 
-@router.get("/{analysis_id}", response_model=AnalysisOut)
+@router.get("/{analysis_id}", response_model=AnalysisOut, responses=COMMON_ERRORS)
 def get_analysis(
     analysis_id: str,
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],

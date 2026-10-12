@@ -131,7 +131,7 @@ class SqliteAnalysisRepository:
                 except sqlite3.IntegrityError:
                     record.id = _new_id()
             else:
-                raise ApiException(409, "conflict", "No se pudo guardar el análisis.")
+                raise ApiException(500, "internal_error", "No se pudo guardar el análisis.")
             return record
 
     def list_by_account(

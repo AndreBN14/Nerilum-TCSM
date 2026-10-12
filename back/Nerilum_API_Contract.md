@@ -35,18 +35,25 @@ Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhos
 { "error": { "code": "invalid_credentials", "message": "Correo o contraseña incorrectos." } }
 ```
 
-Registrar handlers para `RequestValidationError` y `HTTPException`, de modo que FastAPI no devuelva su formato por defecto.
+Registrar handlers para `RequestValidationError`, `HTTPException` (la de **Starlette**, para cubrir también los 404/405 que genera el framework) y una `Exception` genérica que responde `500 internal_error` sin traza en el cuerpo.
 
 | HTTP | code | Cuándo |
 |---|---|---|
-| 401 | `invalid_credentials` | Login fallido (mismo mensaje para correo inexistente y contraseña errónea). |
-| 401 | `invalid_token` | Token ausente, inválido o expirado. |
-| 409 | `email_exists` | Registro con correo ya usado. |
-| 422 | `validation_error` | Email mal formado, contraseña < 8, nombre vacío. |
 | 400 | `invalid_image` | El archivo no se puede decodificar como imagen. |
+| 401 | `invalid_token` | Token ausente, inválido o expirado. |
+| 401 | `invalid_credentials` | Login fallido (reservado; lo gestiona Supabase Auth). |
+| 404 | `not_found` | Recurso inexistente o de otra cuenta. |
+| 405 | `method_not_allowed` | Método no permitido en la ruta. |
+| 409 | `email_exists` | Registro con correo ya usado (reservado; no aplicado en v1). |
 | 413 | `too_large` | Archivo > 10 MB. |
 | 415 | `unsupported_media_type` | No es JPG/JPEG/PNG (se valida por firma del archivo, no solo por extensión). |
+| 422 | `validation_error` | Cuerpo o parámetros inválidos. |
+| 429 | `rate_limited` | Límite de peticiones superado (reservado; sin rate limiting aún). |
+| 500 | `internal_error` | Error interno no controlado. |
+| 503 | `service_unavailable` | Servicio o JWKS no disponible; incluye `Retry-After`. |
 | 503 | `model_unavailable` | El modelo no está cargado. El cliente lo traduce a `AnalysisUnavailable`. |
+
+Los `503` incluyen el header `Retry-After` en segundos (por defecto `5`, configurable con `RETRY_AFTER_SECONDS`). El código `403 forbidden` no se usa en v1: una `HTTPException(403)` sin código explícito cae a `http_error`.
 
 ## Rutas
 
@@ -123,7 +130,7 @@ Errores: 401 `invalid_token` (el frontend cae a bienvenida).
 - `category` = clase con mayor puntuación; `probability` = su puntuación.
 - `scores` siempre trae las 4 clases y suma ≈ 1.0.
 - Son puntuaciones del modelo, no probabilidades clínicas calibradas.
-- Errores: 400, 413, 415, 503, 401.
+- Errores: 400, 401, 413, 415, 500, 503.
 
 ### 5. GET /analyses?limit=50&offset=0
 

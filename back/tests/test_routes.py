@@ -25,6 +25,14 @@ def test_missing_route_uses_error_envelope(tmp_path) -> None:
     assert response.json()["error"]["code"] == "not_found"
 
 
+def test_method_not_allowed_uses_error_envelope(tmp_path) -> None:
+    app = create_app(Settings(_env_file=None, model_path=None, database_path=tmp_path / "h.db"))
+    with TestClient(app) as client:
+        response = client.delete("/api/v1/health")
+    assert response.status_code == 405
+    assert response.json()["error"]["code"] == "method_not_allowed"
+
+
 def test_openapi_exposes_expected_routes(tmp_path) -> None:
     schema = create_app(
         Settings(_env_file=None, model_path=None, database_path=tmp_path / "h.db")

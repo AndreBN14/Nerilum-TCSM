@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
@@ -6,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import Settings, get_settings
 from app.core.errors import register_error_handlers
+from app.core.logging import configure_logging
 from app.routes import analyses, auth, health
 from app.services.container import Services, create_services
 
@@ -14,6 +16,9 @@ def create_app(
     settings: Settings | None = None, services: Services | None = None
 ) -> FastAPI:
     config = settings if settings is not None else get_settings()
+    configure_logging(
+        level=logging.DEBUG if config.app_env == "development" else logging.INFO
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

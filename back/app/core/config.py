@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     model_softmax: bool = False
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
     max_image_dimension: int = Field(default=4096, ge=16)
+    retry_after_seconds: int = Field(default=5, ge=1)
     seed_demo: bool = False
     seed_demo_account_id: UUID | None = None
 

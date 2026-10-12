@@ -150,6 +150,15 @@ defecto). Un análisis ajeno o inexistente responde `404 not_found`.
 | JWKS no disponible y no hay clave utilizable | `503 service_unavailable` |
 | Verificación no configurada (`SUPABASE_URL` ausente) | `503 service_unavailable` |
 
+## Manejo de errores
+
+`app/core/errors.py` unifica todas las respuestas en `{ "error": { "code": ..., "message": ... } }`:
+
+- Handler sobre la `HTTPException` de **Starlette**, que cubre también los `404`/`405` generados por el framework.
+- Handler genérico para `Exception` → `500 internal_error` con mensaje fijo (la traza queda solo en el log del servidor).
+- Los `503` añaden `Retry-After` (segundos); se respeta el header si la excepción ya lo trae.
+- El logging del logger `nerilum` se configura en `app/core/logging.py` (visible con `python -m app` y con `uvicorn app.main:app`).
+
 ## Configuración
 
 `core/config.py` carga `back/.env` con `pydantic-settings`. Las variables del
@@ -167,6 +176,7 @@ proceso tienen prioridad.
 | `JWKS_CACHE_TTL_SECONDS` | `3600` | Vigencia de las claves en caché. |
 | `JWKS_MIN_REFRESH_INTERVAL_SECONDS` | `60` | Mínimo entre refrescos/fallos de JWKS. |
 | `JWKS_TIMEOUT_SECONDS` | `5` | Timeout de la petición al JWKS. |
+| `RETRY_AFTER_SECONDS` | `5` | Segundos del header `Retry-After` en las respuestas `503`. |
 | `CORS_ORIGINS` | `[]` | Lista JSON de orígenes web permitidos. |
 | `DATABASE_PATH` | `back/data/nerilum.db` | Ubicación del SQLite local. |
 | `MODEL_PATH` | vacío | Ruta al artefacto ONNX (`app/models/best.onnx`). |

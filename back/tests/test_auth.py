@@ -138,6 +138,7 @@ def test_me_returns_503_when_jwks_unavailable(stub, keypair):
         )
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "service_unavailable"
+    assert response.headers["retry-after"] == "5"
 
 
 def test_me_owner_comes_from_sub_claim(stub, keypair):

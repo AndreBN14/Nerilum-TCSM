@@ -64,6 +64,20 @@ def test_create_returns_503_when_model_not_ready(stub, keypair):
         )
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "model_unavailable"
+    assert response.headers["retry-after"] == "5"
+
+
+def test_create_503_retry_after_follows_setting(stub, keypair):
+    payload = _png_bytes()
+    token = sign_token(keypair)
+    with _app(stub, settings_overrides={"retry_after_seconds": 7}) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(payload),
+        )
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "7"
 
 
 def test_create_valid_png(stub, keypair):
