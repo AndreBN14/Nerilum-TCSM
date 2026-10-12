@@ -275,7 +275,7 @@ Estas preferencias no reemplazan los tokens y el ciclo de sesión real de Supaba
 
 Los errores de Supabase Auth y los de la futura API FastAPI tienen fuentes diferentes. El frontend actualmente muestra mensajes comprensibles, pero no debe suponerse que Supabase devuelve el formato `{ "error": { "code": ..., "message": ... } }` del contrato anterior.
 
-Un formato unificado de errores podrá definirse para FastAPI al implementar sus endpoints. Sus códigos deberán cubrir autenticación del token, autorización, validación de archivos, indisponibilidad de modelo y errores de procesamiento, conforme a las operaciones finalmente aprobadas.
+Un formato unificado de errores se define en la fuente canónica `back/Nerilum_API_Contract.md` (sección «Formato de error»): envoltura `{ "error": { "code": ..., "message": ... } }`, códigos de token/validación/modelo, `429 rate_limited`, `500 internal_error` y `Retry-After` en los `503`. Aquí no se duplica la tabla.
 
 ### Configuración Flutter
 

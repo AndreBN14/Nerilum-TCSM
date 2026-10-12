@@ -30,21 +30,10 @@ Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhos
 ## Formato de error (todas las rutas)
 
 ```json
-{ "error": { "code": "invalid_credentials", "message": "Correo o contraseña incorrectos." } }
+{ "error": { "code": "invalid_token", "message": "Token de acceso inválido." } }
 ```
 
-Registrar handlers para `RequestValidationError` y `HTTPException`, de modo que FastAPI no devuelva su formato por defecto.
-
-| HTTP | code | Cuándo |
-|---|---|---|
-| 401 | `invalid_credentials` | Login fallido (mismo mensaje para correo inexistente y contraseña errónea). |
-| 401 | `invalid_token` | Token ausente, inválido o expirado. |
-| 409 | `email_exists` | Registro con correo ya usado. |
-| 422 | `validation_error` | Email mal formado, contraseña < 8, nombre vacío. |
-| 400 | `invalid_image` | El archivo no se puede decodificar como imagen. |
-| 413 | `too_large` | Archivo > 10 MB. |
-| 415 | `unsupported_media_type` | No es JPG/JPEG/PNG (se valida por firma del archivo, no solo por extensión). |
-| 503 | `model_unavailable` | El modelo no está cargado. El cliente lo traduce a `AnalysisUnavailable`. |
+La envoltura y la tabla completa de códigos (incluidos `429`, `500` y `Retry-After` en los `503`) viven en la fuente canónica: `back/Nerilum_API_Contract.md` → sección «Formato de error». No duplicar aquí.
 
 ## Rutas
 
