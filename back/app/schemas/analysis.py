@@ -16,6 +16,7 @@ __all__ = [
     "ModelMetadata",
     "Scores",
     "AnalysisOut",
+    "AnalysisSummary",
     "AnalysisList",
 ]
 
@@ -69,8 +70,21 @@ class AnalysisOut(BaseModel):
     disclaimer: str = DISCLAIMER
 
 
+class AnalysisSummary(BaseModel):
+    id: str
+    category: Category
+    created_at: IsoTimestamp
+    display_name: str | None = None
+    probability: float
+    scores: Scores
+    is_demo: bool = False
+    model_name: str
+    model_version: str  # formato "name@version"
+    model_dataset: str
+
+
 class AnalysisList(BaseModel):
-    items: list[AnalysisOut]
+    items: list[AnalysisSummary]
     total: int
     limit: int
     offset: int

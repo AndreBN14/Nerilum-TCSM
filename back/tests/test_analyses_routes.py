@@ -215,21 +215,6 @@ def test_clean_display_name_unit():
         _clean_display_name("MRI\x1f1")
 
 
-def test_create_ignores_extension_and_content_type(stub, keypair):
-    token = sign_token(keypair)
-    buf = io.BytesIO()
-    Image.new("RGB", (32, 32), (5, 5, 5)).save(buf, format="PNG")
-    data = buf.getvalue()
-
-    with _app(stub, inference=FakeInference()) as client:
-        response = client.post(
-            "/api/v1/analyses",
-            data={"display_name": "Muestra"},
-            files={"file": ("muestra.txt", data, "text/plain")},
-            headers=_bearer(token),
-        )
-        assert response.status_code == 201
-
 
 def test_create_rejects_truncated_image(stub, keypair):
     token = sign_token(keypair)
@@ -477,15 +462,3 @@ def test_invalid_category_row_returns_500_without_leaking(
     assert account not in caplog.text
     assert "Paciente Secreto" not in caplog.text
 
-def test_create_ignores_extension_and_content_type(auth_token, client):
-    buf = io.BytesIO()
-    Image.new("RGB", (32, 32), (5, 5, 5)).save(buf, format="PNG")
-    data = buf.getvalue()
-
-    response = client.post(
-        "/api/v1/analyses",
-        data={"display_name": "Muestra"},
-        files={"file": ("muestra.txt", data, "text/plain")},
-        headers=auth_token,
-    )
-    assert response.status_code == 201

@@ -22,6 +22,7 @@ from app.routes.dependencies import get_app_settings, get_current_user, get_serv
 from app.schemas.analysis import (
     AnalysisList,
     AnalysisOut,
+    AnalysisSummary,
     Category,
     ModelMetadata,
     Scores,
@@ -114,6 +115,32 @@ def _to_out(record: AnalysisRecord) -> AnalysisOut:
     )
 
 
+def _summary_from_record(record: AnalysisRecord) -> AnalysisSummary:
+    try:
+        category = Category(record.category)
+        scores = Scores(**record.scores)
+    except (ValidationError, ValueError) as exc:
+        logger.warning(
+            "Análisis con datos inválidos (id=%s, error=%s)",
+            record.id,
+            type(exc).__name__,
+        )
+        raise ApiException(500, "internal_error", "Error interno del servidor.") from exc
+
+    return AnalysisSummary(
+        id=record.id,
+        category=category,
+        created_at=record.created_at,
+        display_name=record.display_name,
+        probability=record.probability,
+        scores=scores,
+        is_demo=record.is_demo,
+        model_name=record.model_name,
+        model_version=f"{record.model_name}@{record.model_version}",
+        model_dataset=record.model_dataset,
+    )
+
+
 @router.post("", response_model=AnalysisOut, status_code=201, responses=COMMON_ERRORS)
 async def create_analysis(
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
@@ -193,7 +220,7 @@ def list_analyses(
         str(user.id), limit=limit, offset=offset
     )
     return AnalysisList(
-        items=[_to_out(item) for item in items],
+        items=[_summary_from_record(item) for item in items],
         total=total,
         limit=limit,
         offset=offset,

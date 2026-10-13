@@ -13,7 +13,7 @@ Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhos
 | Auth | JWT de acceso, vida de 7 días, **sin refresh** en v1. `restoreSession()` = `GET /auth/me` con el token guardado. |
 | Logout | El cliente borra el token. El servidor no lo revoca (el JWT vive hasta expirar). |
 | Imágenes | No se guardan. Se persiste solo el resultado. |
-| Base de datos | SQLite (archivo local). Tablas: `accounts`, `analyses`. |
+| Base de datos | Fase 1: SQLite local (`back/data/nerilum.db`, tabla `analyses`). Objetivo: **Supabase Postgres** con RLS (ver «Persistencia (Supabase)»). |
 | Modelo | Uno solo: `yolov8n-cls` exportado a ONNX, cargado al arrancar. Sin selección de modelo en la API. |
 | Historial | `limit` / `offset`, orden `created_at` descendente. |
 | Errores | Un solo formato para todas las rutas. |
@@ -167,6 +167,82 @@ Devuelve un objeto de análisis. 404 `not_found` si no existe o pertenece a otra
 ## Cuenta demo (solo desarrollo)
 
 Con `SEED_DEMO=true` se siembra `demo@nerilum.app` con 4 registros `is_demo: true` (réplica de `mock_analysis_data_source.dart`). Desactivado por defecto; nunca en despliegue real.
+
+## Persistencia (Supabase)
+
+**Estado.** La Fase 1 persiste en SQLite local (`back/data/nerilum.db`, tabla
+`analyses`). El objetivo es mover el historial a **Supabase Postgres**. La API no
+cambia: mismas rutas, mismos DTO (`AnalysisOut` / `AnalysisSummary` /
+`AnalysisList`) y el mismo aislamiento por `account_id`.
+
+### Tabla `public.analyses`
+
+| Columna | Tipo Postgres | Nulo | Origen / regla |
+|---|---|---|---|
+| `id` | `text` PK | no | `an_` + 12 hex; lo genera el backend. |
+| `account_id` | `uuid` | no | `sub` **verificado** del JWT de Supabase. Nunca del cliente. Referencia lógica a `auth.users(id)`. |
+| `category` | `text` | no | Una de `NonDemented`, `VeryMildDemented`, `MildDemented`, `ModerateDemented` (enum `Category`); `CHECK`. |
+| `probability` | `double precision` | no | Puntuación del `category` (argmax). |
+| `scores` | `jsonb` | no | Las 4 clases; suma ≈ 1.0. En SQLite es `scores_json` (TEXT). |
+| `display_name` | `text` | sí | Recortado; `null` si vacío; 1–120 caracteres; sin caracteres de control. |
+| `is_demo` | `boolean` | no | `default false`; solo lo activa la semilla de desarrollo. |
+| `model_name` | `text` | no | p. ej. `yolov8n-cls`. |
+| `model_version` | `text` | no | p. ej. `v0.1`. |
+| `model_dataset` | `text` | no | p. ej. `ADNI`. |
+| `created_at` | `timestamptz` | no | `default now()`; se expone como ISO-8601 UTC con segundos (`YYYY-MM-DDTHH:MM:SSZ`). |
+
+Índice: `(account_id, created_at DESC, id DESC)` (mismo orden que `GET /analyses`).
+
+### RLS (Row Level Security)
+
+`analyses` es de solo lectura/inserción para el usuario: la API v1 no actualiza ni
+borra filas.
+
+```sql
+alter table public.analyses enable row level security;
+revoke all on public.analyses from anon, authenticated;
+grant select, insert on public.analyses to authenticated;
+create policy analyses_select_own on public.analyses
+  for select to authenticated
+  using ((select auth.uid()) = account_id);
+create policy analyses_insert_own on public.analyses
+  for insert to authenticated
+  with check ((select auth.uid()) = account_id);
+```
+
+- El backend escribe con el `account_id` derivado del `sub` del JWT verificado (ES256 vía JWKS). No acepta `account_id` ni identidad por parámetro, formulario o query.
+- El `service_role` del backend omite RLS; por eso la validación de `sub` en `app/core/security.py` es obligatoria y no se delega al cliente.
+- `GET /analyses/{id}` de otra cuenta responde `404 not_found` (no `403`): no se revela la existencia de recursos ajenos.
+
+### Qué se guarda y qué NO
+
+Se guarda **solo el resultado del análisis** (las columnas de arriba).
+
+No se almacena ni se registra en logs, en ningún caso:
+- Imagen subida, bytes, base64 o miniaturas.
+- Metadatos de imagen / **EXIF** (GPS, dispositivo, fecha de captura).
+- **PHI** (datos de paciente: nombre real, fecha de nacimiento, identificadores clínicos, notas).
+- IP, `User-Agent`, cabeceras crudas o cookies.
+- Tokens (JWT de acceso), contraseñas o secretos.
+
+El único texto libre que introduce el usuario es `display_name`, y pasa por `_clean_display_name` antes de persistirse.
+
+### Validación y errores relevantes
+
+| Regla | Dónde | Error |
+|---|---|---|
+| `display_name` (recorte, vacío→`null`, 1–120, sin controles) | `_clean_display_name` | `422 validation_error` |
+| `account_id` = `sub` del JWT verificado (UUID) | `SupabaseJWTVerifier` | `401 invalid_token` |
+| `created_at` ISO-8601 UTC con `Z` | `IsoTimestamp` | `422 validation_error` |
+| Recurso de otra cuenta / inexistente | repositorio | `404 not_found` |
+| Fila ilegible (categoría/scores corruptos) | `_to_out` | `500 internal_error` |
+
+### Correspondencia con la API (sin cambios)
+
+- `POST /api/v1/analyses` → `201` **`AnalysisOut`** (`id`, `category`, `created_at`, `display_name`, `probability`, `scores`, `is_demo`, `model{name,version,dataset}`, `disclaimer`).
+- `GET /api/v1/analyses?limit=&offset=` → **`AnalysisList`** de **`AnalysisSummary`** (añade `model_name`, `model_version` en formato `name@version`, `model_dataset`; sin `disclaimer`).
+- `GET /api/v1/analyses/{id}` → **`AnalysisOut`**.
+
 
 ## Requisitos transversales
 
