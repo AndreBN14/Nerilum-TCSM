@@ -76,8 +76,10 @@ Para pruebas (usa claves EC y JWKS simulados, sin red ni Supabase real):
 | GET | `/api/v1/analyses/{id}` | Bearer | Detalle de un análisis propio. |
 
 `POST /api/v1/analyses` es multipart: `file` (JPG/JPEG o PNG, máx. 10 MB) y un
-opcional `display_name` (≤120 caracteres). Errores: `415` formato no admitido,
-`400` imagen corrupta, `413` exceso de tamaño, `503` modelo no disponible.
+opcional `display_name` (se recorta; vacío queda en `null`; ≤120 caracteres ya
+recortados; sin caracteres de control). Errores: `415` formato no admitido,
+`400` imagen corrupta, `413` exceso de tamaño, `422` `display_name` inválido,
+`503` modelo no disponible.
 
 Respuesta de `/api/v1/health` (público):
 
@@ -96,30 +98,36 @@ Respuesta de `POST /api/v1/analyses` (201):
 {
   "id": "an_1a2b3c4d5e6f",
   "category": "NonDemented",
+  "created_at": "2026-10-09T15:30:00Z",
+  "display_name": "MRI 1",
   "probability": 0.9274,
   "scores": {
-    "MildDemented": 0.0210,
-    "ModerateDemented": 0.0112,
     "NonDemented": 0.9274,
-    "VeryMildDemented": 0.0404
+    "VeryMildDemented": 0.0404,
+    "MildDemented": 0.0210,
+    "ModerateDemented": 0.0112
   },
-  "display_name": "MRI 1",
-  "created_at": "2026-10-09T15:30:00.123456Z",
   "is_demo": false,
   "model": { "name": "yolov8n-cls", "version": "v0.1", "dataset": "ADNI" },
   "disclaimer": "Resultado orientativo. No constituye un diagnóstico médico."
 }
 ```
 
-`probability` es la del `category` (argmax); `scores` incluye las cuatro clases.
-`GET /api/v1/analyses` acepta `limit` (1-100, por defecto 50) y `offset` (0 por
+`probability` es la del `category` (argmax); `scores` incluye las cuatro clases
+como propiedades en PascalCase (`NonDemented`, `VeryMildDemented`, `MildDemented`,
+`ModerateDemented`), derivadas del enum `Category`. `created_at` es ISO-8601 UTC
+con segundos (`YYYY-MM-DDTHH:MM:SSZ`). `GET /api/v1/analyses` acepta
+`limit` (1-100, por defecto 50) y `offset` (0 por
 defecto). Un análisis ajeno o inexistente responde `404 not_found`.
 
 ## Persistencia y modelo
 
 - **SQLite** local en `data/nerilum.db` (tabla `analyses`, índice por
-  `account_id` + `created_at DESC`). No se almacenan imágenes.
-- El modelo se lee de `MODEL_PATH`; las etiquetas se toman de los metadatos ONNX.
+  `account_id` + `created_at DESC`). No se almacenan imágenes. El historial
+  ordena por `created_at DESC, id DESC`; las filas antiguas con microsegundos se
+  normalizan a segundos al leerlas.
+- El modelo se carga desde la carpeta `MODEL_DIR`, que debe contener un único
+  `*.onnx` y su `model_card.json`; las etiquetas se toman de los metadatos ONNX.
   El artefacto es un **YOLOv8n-cls** cuya salida ONNX ya está normalizada
   (softmax integrado), por lo que `MODEL_SOFTMAX=false`. El preprocesado por
   defecto es `center_crop`, que reproduce el pipeline de inferencia de referencia
@@ -179,14 +187,13 @@ proceso tienen prioridad.
 | `RETRY_AFTER_SECONDS` | `5` | Segundos del header `Retry-After` en las respuestas `503`. |
 | `CORS_ORIGINS` | `[]` | Lista JSON de orígenes web permitidos. |
 | `DATABASE_PATH` | `back/data/nerilum.db` | Ubicación del SQLite local. |
-| `MODEL_PATH` | vacío | Ruta al artefacto ONNX (`app/models/best.onnx`). |
-| `MODEL_NAME` / `MODEL_VERSION` | `yolov8n-cls` / `v0.1` | Metadatos expuestos. |
-| `MODEL_DATASET` | `Alzheimer MRI Dataset (Kaggle)` | Dataset de entrenamiento. |
+| `MODEL_DIR` | vacío | Carpeta con un único `*.onnx` y su `model_card.json`. |
 | `MODEL_INPUT_SIZE` | vacío | Tamaño de entrada; si falta, el declarado en ONNX. |
 | `MODEL_RESIZE_MODE` | `center_crop` | `letterbox`, `center_crop` o `stretch`. Por defecto el pipeline de referencia de Ultralytics. |
 | `MODEL_SOFTMAX` | `false` | Aplica softmax solo si el modelo devuelve logits; este ONNX ya normaliza. |
 | `MAX_IMAGE_BYTES` | `10485760` | Tamaño máximo de las imágenes subidas. |
 | `MAX_IMAGE_DIMENSION` | `4096` | Máximo alto/ancho en píxeles. |
+| `MAX_IMAGE_PIXELS` | `16777216` | Máximo número de píxeles totales (w*h). El límite de píxeles y el de dimensión se aplican a la vez. |
 | `SEED_DEMO` | `false` | Activa registros demo (solo desarrollo). |
 | `SEED_DEMO_ACCOUNT_ID` | vacío | UUID del usuario que recibe los registros demo. |
 

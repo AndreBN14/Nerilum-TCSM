@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 
+import pytest
 from conftest import (
     FakeInference,
     build_app,
@@ -12,6 +14,10 @@ from conftest import (
 )
 from fastapi.testclient import TestClient
 from PIL import Image
+
+from app.core.categories import Category
+from app.core.errors import ApiException
+from app.routes.analyses import MAX_DISPLAY_NAME_LENGTH, _clean_display_name
 
 
 def _app(stub, *, inference=None, db_path=None, settings_overrides=None) -> TestClient:
@@ -86,7 +92,6 @@ def test_create_valid_png(stub, keypair):
     with _app(
         stub,
         inference=inference,
-        settings_overrides={"model_dataset": "ADNI"},
     ) as client:
         response = client.post(
             "/api/v1/analyses",
@@ -121,6 +126,109 @@ def test_rejects_text_body(stub, keypair):
         )
     assert response.status_code == 415
     assert response.json()["error"]["code"] == "unsupported_media_type"
+
+
+def test_create_trims_display_name(stub, keypair):
+    token = sign_token(keypair)
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(_png_bytes(), form={"display_name": "  MRI 1  "}),
+        )
+    assert response.status_code == 201
+    assert response.json()["display_name"] == "MRI 1"
+
+
+def test_create_blank_display_name_becomes_null(stub, keypair):
+    token = sign_token(keypair)
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(_png_bytes(), form={"display_name": "   "}),
+        )
+    assert response.status_code == 201
+    assert response.json()["display_name"] is None
+
+
+def test_create_omitted_display_name_is_null(stub, keypair):
+    token = sign_token(keypair)
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(_png_bytes()),
+        )
+    assert response.status_code == 201
+    assert response.json()["display_name"] is None
+
+
+def test_create_measures_length_after_trim(stub, keypair):
+    token = sign_token(keypair)
+    name = "a" * MAX_DISPLAY_NAME_LENGTH
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(_png_bytes(), form={"display_name": f"  {name}  "}),
+        )
+    assert response.status_code == 201
+    assert response.json()["display_name"] == name
+
+
+def test_create_rejects_overlong_display_name(stub, keypair):
+    token = sign_token(keypair)
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(
+                _png_bytes(),
+                form={"display_name": "a" * (MAX_DISPLAY_NAME_LENGTH + 1)},
+            ),
+        )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+@pytest.mark.parametrize("bad", ["MRI\x00", "MRI\x07", "MRI\n1"])
+def test_create_rejects_control_chars_in_display_name(stub, keypair, bad):
+    token = sign_token(keypair)
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(_png_bytes(), form={"display_name": bad}),
+        )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_clean_display_name_unit():
+    assert _clean_display_name(None) is None
+    assert _clean_display_name("   ") is None
+    assert _clean_display_name("  MRI 1  ") == "MRI 1"
+    with pytest.raises(ApiException):
+        _clean_display_name("x" * (MAX_DISPLAY_NAME_LENGTH + 1))
+    with pytest.raises(ApiException):
+        _clean_display_name("MRI\x1f1")
+
+
+def test_create_ignores_extension_and_content_type(stub, keypair):
+    token = sign_token(keypair)
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), (5, 5, 5)).save(buf, format="PNG")
+    data = buf.getvalue()
+
+    with _app(stub, inference=FakeInference()) as client:
+        response = client.post(
+            "/api/v1/analyses",
+            data={"display_name": "Muestra"},
+            files={"file": ("muestra.txt", data, "text/plain")},
+            headers=_bearer(token),
+        )
+        assert response.status_code == 201
 
 
 def test_create_rejects_truncated_image(stub, keypair):
@@ -260,16 +368,25 @@ def test_get_missing_analysis_returns_404(stub, keypair):
 
 
 def test_seed_demo_is_idempotent_and_route_never_marks_demo(stub, keypair, tmp_path):
+    from app.core.categories import Category
+    from app.core.model_info import ModelInfo
     from app.services.analyses import SqliteAnalysisRepository
 
     db = tmp_path / "seed.db"
     repo = SqliteAnalysisRepository(db)
     demo_account = "99999999-9999-9999-9999-999999999999"
-    repo.seed_demo(demo_account)
-    repo.seed_demo(demo_account)
+    model_info = ModelInfo(
+        name="yolov8n-cls",
+        version="v0.1",
+        dataset="Alzheimer MRI Dataset (Kaggle)",
+        classes=[category.value for category in Category],
+    )
+    repo.seed_demo(demo_account, model_info)
+    repo.seed_demo(demo_account, model_info)
     items, total = repo.list_by_account(demo_account, limit=100, offset=0)
     assert total == 4
     assert all(item.is_demo for item in items)
+    assert all(item.model_dataset == "Alzheimer MRI Dataset (Kaggle)" for item in items)
 
     # Un análisis creado por la API nunca lleva is_demo=true.
     token = sign_token(keypair, sub=demo_account)
@@ -294,3 +411,81 @@ def test_health_reports_model_metadata_when_loaded(stub):
         "model_name": "fake-cls",
         "model_version": "test",
     }
+
+
+def test_scores_and_probability_coherence_in_serialized_json(stub, keypair):
+    token = sign_token(keypair)
+    with _app(stub, inference=FakeInference()) as client:
+        created = client.post(
+            "/api/v1/analyses",
+            headers=_bearer(token),
+            files=_png_download(_png_bytes()),
+        ).json()
+        detail = client.get(
+            f"/api/v1/analyses/{created['id']}", headers=_bearer(token)
+        ).json()
+
+    for payload in (created, detail):
+        assert payload["category"] == max(
+            payload["scores"], key=payload["scores"].get
+        )
+        assert payload["probability"] == payload["scores"][payload["category"]]
+
+
+def test_invalid_category_row_returns_500_without_leaking(
+    stub, keypair, tmp_path, caplog
+):
+    from app.services.analyses import AnalysisRecord, SqliteAnalysisRepository
+
+    db = tmp_path / "bad.db"
+    repo = SqliteAnalysisRepository(db)
+    account = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    stored = repo.create(
+        AnalysisRecord(
+            account_id=account,
+            category="NotAClass",
+            probability=0.25,
+            scores={category.value: 0.25 for category in Category},
+            display_name="Paciente Secreto",
+            model_name="yolov8n-cls",
+            model_version="v0.1",
+            model_dataset="Alzheimer MRI Dataset (Kaggle)",
+        )
+    )
+
+    token = sign_token(keypair, sub=account)
+    logger = logging.getLogger("nerilum")
+    caplog.set_level(logging.WARNING, logger="nerilum")
+    logger.addHandler(caplog.handler)
+    try:
+        with _app(stub, inference=FakeInference(), db_path=db) as client:
+            response = client.get(
+                f"/api/v1/analyses/{stored.id}", headers=_bearer(token)
+            )
+    finally:
+        logger.removeHandler(caplog.handler)
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "error": {
+            "code": "internal_error",
+            "message": "Error interno del servidor.",
+        }
+    }
+    assert stored.id in caplog.text
+    assert "ValueError" in caplog.text
+    assert account not in caplog.text
+    assert "Paciente Secreto" not in caplog.text
+
+def test_create_ignores_extension_and_content_type(auth_token, client):
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), (5, 5, 5)).save(buf, format="PNG")
+    data = buf.getvalue()
+
+    response = client.post(
+        "/api/v1/analyses",
+        data={"display_name": "Muestra"},
+        files={"file": ("muestra.txt", data, "text/plain")},
+        headers=auth_token,
+    )
+    assert response.status_code == 201

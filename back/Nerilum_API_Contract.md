@@ -130,6 +130,7 @@ Errores: 401 `invalid_token` (el frontend cae a bienvenida).
 - `category` = clase con mayor puntuación; `probability` = su puntuación.
 - `scores` siempre trae las 4 clases y suma ≈ 1.0.
 - Son puntuaciones del modelo, no probabilidades clínicas calibradas.
+- La imagen no se guarda. No se leen ni persisten datos EXIF/metadatos de la imagen.
 - Errores: 400, 401, 413, 415, 500, 503.
 
 ### 5. GET /analyses?limit=50&offset=0

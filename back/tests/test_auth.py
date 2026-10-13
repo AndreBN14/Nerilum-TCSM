@@ -21,7 +21,7 @@ def _client(stub) -> TestClient:
 
 def test_health_is_public_without_supabase_config(tmp_path):
     app = create_app(
-        Settings(_env_file=None, model_path=None, database_path=tmp_path / "h.db")
+        Settings(_env_file=None, model_dir=None, database_path=tmp_path / "h.db")
     )
     with TestClient(app) as client:
         response = client.get("/api/v1/health")

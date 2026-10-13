@@ -1,17 +1,22 @@
 """Inferencia de clasificación con el modelo ONNX exportado de YOLOv8n-cls.
 
-El backend no emite predicciones simuladas: si el artefacto no existe o no se
-puede cargar, el servicio se reporta como ``ready=False`` y ``POST /analyses``
-responde ``503 model_unavailable``.
+El backend no emite predicciones simuladas: si el artefacto (o su model card) no
+existe, no se puede cargar o su metadata no es válida, el servicio se reporta
+como ``ready=False`` (``model_info=None``) y ``POST /analyses`` responde
+``503 model_unavailable``. La identidad del modelo sale de ``ModelInfo``; no hay
+constantes sueltas con el nombre del modelo.
 """
 
 from __future__ import annotations
 
-import ast
+import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from app.core.config import DEFAULT_CLASSES
+from app.core.model_info import ModelInfo, ModelInfoError, load_model_info
+
+logger = logging.getLogger("nerilum")
 
 DISCLAIMER = "Resultado orientativo. No constituye un diagnóstico médico."
 
@@ -27,10 +32,9 @@ class InferenceStatus(Protocol):
     def ready(self) -> bool: ...
 
     @property
-    def model_name(self) -> str | None: ...
+    def model_info(self) -> ModelInfo | None: ...
 
-    @property
-    def model_version(self) -> str | None: ...
+    def analyze(self, image) -> dict[str, float]: ...
 
 
 class UnavailableInference:
@@ -41,12 +45,11 @@ class UnavailableInference:
         return False
 
     @property
-    def model_name(self) -> None:
+    def model_info(self) -> None:
         return None
 
-    @property
-    def model_version(self) -> None:
-        return None
+    def analyze(self, image) -> dict[str, float]:
+        raise InferenceError("El modelo no está disponible.")
 
 
 class OnnxClassifier:
@@ -67,70 +70,80 @@ class OnnxClassifier:
 
     def __init__(
         self,
-        model_path: str | Path,
+        model_dir: str | Path,
         *,
         resize_mode: str = "center_crop",
         softmax: bool = False,
         input_size: int | None = None,
-        model_name: str = "yolov8n-cls",
-        model_version: str = "v0.1",
+        session_factory: Callable[[Path], Any] | None = None,
     ) -> None:
-        self._model_path = Path(model_path)
+        self._model_dir = Path(model_dir)
         self._resize_mode = resize_mode
         self._apply_softmax = softmax
         self._configured_input_size = input_size
-        self._model_name = model_name
-        self._model_version = model_version
-        self._session = None
+        self._session_factory = session_factory
+        self._session: Any | None = None
+        self._model_info: ModelInfo | None = None
         self._input_name = "images"
         self._input_size = input_size
-        self._names: list[str] = list(DEFAULT_CLASSES)
         try:
             self._load()
-        except InferenceError:
+        except InferenceError as exc:
+            logger.warning("Modelo no disponible: %s", exc)
             self._session = None
+            self._model_info = None
 
     # -- Estado ----------------------------------------------------------
 
     @property
     def ready(self) -> bool:
-        return self._session is not None
+        return self._session is not None and self._model_info is not None
 
     @property
-    def model_name(self) -> str:
-        return self._model_name
-
-    @property
-    def model_version(self) -> str:
-        return self._model_version
+    def model_info(self) -> ModelInfo | None:
+        return self._model_info
 
     # -- Carga del artefacto ---------------------------------------------
 
-    def _load(self) -> None:
-        if not self._model_path.exists():
-            self._dispose()
-            raise InferenceError(f"No existe el artefacto: {self._model_path}")
+    def _find_artifact(self) -> Path:
+        if not self._model_dir.is_dir():
+            raise InferenceError(f"No existe la carpeta del modelo: {self._model_dir}")
+        candidates = sorted(self._model_dir.glob("*.onnx"))
+        if not candidates:
+            raise InferenceError(f"No hay ningún '.onnx' en {self._model_dir}")
+        if len(candidates) > 1:
+            raise InferenceError(
+                f"Se esperaba un único '.onnx' en {self._model_dir}; "
+                f"se encontraron {len(candidates)}."
+            )
+        return candidates[0]
 
+    def _create_session(self, onnx_path: Path) -> Any:
+        if self._session_factory is not None:
+            return self._session_factory(onnx_path)
         try:
             import onnxruntime as ort
         except ImportError as exc:  # pragma: no cover - entorno mínimo
-            self._dispose()
             raise InferenceError("onnxruntime no está instalado.") from exc
+        return ort.InferenceSession(
+            str(onnx_path), providers=["CPUExecutionProvider"]
+        )
 
+    def _load(self) -> None:
+        onnx_path = self._find_artifact()
         try:
-            self._session = ort.InferenceSession(
-                str(self._model_path),
-                providers=["CPUExecutionProvider"],
-            )
+            session = self._create_session(onnx_path)
+        except InferenceError:
+            raise
         except Exception as exc:
-            self._dispose()
             raise InferenceError(f"No se pudo cargar el modelo: {exc}") from exc
 
+        self._session = session
+        try:
+            self._model_info = load_model_info(session, self._model_dir / "model_card.json")
+        except ModelInfoError as exc:
+            raise InferenceError(str(exc)) from exc
         self._read_input()
-        self._read_names()
-
-    def _dispose(self) -> None:
-        self._session = None
 
     def _read_input(self) -> None:
         try:
@@ -151,24 +164,11 @@ class OnnxClassifier:
         except Exception:
             self._input_size = self._configured_input_size
 
-    def _read_names(self) -> None:
-        try:
-            raw = self._session.get_modelmeta().custom_metadata_map.get("names")
-            if raw:
-                parsed = ast.literal_eval(raw)
-                if isinstance(parsed, dict):
-                    ordered = [parsed[k] for k in sorted(parsed, key=int)]
-                    if ordered:
-                        self._names = [str(n) for n in ordered]
-        except (ValueError, SyntaxError, TypeError, KeyError):
-            # Si los nombres no se pueden leer, se conservan los del contrato.
-            self._names = list(DEFAULT_CLASSES)
-
     # -- Inferencia ------------------------------------------------------
 
     def analyze(self, image) -> dict[str, float]:
         """Clasifica una imagen ya validada y devuelve las puntuaciones."""
-        if self._session is None:
+        if self._session is None or self._model_info is None:
             raise InferenceError("El modelo no está disponible.")
 
         try:
@@ -185,13 +185,14 @@ class OnnxClassifier:
         if self._apply_softmax:
             scores = self._softmax(scores)
 
-        if len(scores) != len(self._names):
+        classes = self._model_info.classes
+        if len(scores) != len(classes):
             raise InferenceError(
-                f"Salida de {len(scores)} puntuaciones vs {len(self._names)} etiquetas."
+                f"Salida de {len(scores)} puntuaciones vs {len(classes)} etiquetas."
             )
 
         result: dict[str, float] = {
-            label: float(score) for label, score in zip(self._names, scores)
+            label: float(score) for label, score in zip(classes, scores)
         }
         return result
 

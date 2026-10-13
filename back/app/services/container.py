@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import logging
 
 import httpx
 
@@ -6,6 +7,8 @@ from app.core.config import BACK_ROOT, Settings
 from app.core.security import SupabaseJWTVerifier, TokenVerifier
 from app.services.analyses import AnalysisRepository, SqliteAnalysisRepository
 from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
+
+logger = logging.getLogger("nerilum")
 
 
 @dataclass
@@ -25,27 +28,25 @@ class Services:
             closer()
 
 
-def _resolve_model_path(settings: Settings):
-    if settings.model_path is None:
+def _resolve_model_dir(settings: Settings):
+    if settings.model_dir is None:
         return None
-    path = settings.model_path
+    path = settings.model_dir
     if not path.is_absolute():
         path = BACK_ROOT / path
     return path
 
 
 def _build_inference(settings: Settings) -> InferenceStatus:
-    path = _resolve_model_path(settings)
-    if path is None:
-        # MODEL_PATH no configurado: sin modelo conectado.
+    model_dir = _resolve_model_dir(settings)
+    if model_dir is None:
+        # MODEL_DIR no configurado: sin modelo conectado.
         return UnavailableInference()
     return OnnxClassifier(
-        path,
+        model_dir,
         resize_mode=settings.model_resize_mode,
         softmax=settings.model_softmax,
         input_size=settings.model_input_size,
-        model_name=settings.model_name,
-        model_version=settings.model_version,
     )
 
 
@@ -74,6 +75,12 @@ def create_services(settings: Settings) -> Services:
         and settings.seed_demo
         and settings.seed_demo_account_id is not None
     ):
-        analyses.seed_demo(str(settings.seed_demo_account_id))
+        model_info = inference.model_info
+        if model_info is None:
+            logger.warning(
+                "SEED_DEMO activo pero el modelo no está listo; no se siembran registros."
+            )
+        else:
+            analyses.seed_demo(str(settings.seed_demo_account_id), model_info)
 
     return services

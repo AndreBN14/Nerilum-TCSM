@@ -16,12 +16,37 @@ from pathlib import Path
 from typing import Protocol
 
 from app.core.errors import ApiException
+from app.core.model_info import ModelInfo
 
 DemoRecord = tuple[str, str, float]
 
 
+def _format_utc(value: datetime) -> str:
+    """Formato canónico del contrato: ISO-8601 UTC con segundos y ``Z``."""
+
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return _format_utc(datetime.now(timezone.utc))
+
+
+def _normalize_created_at(value: str) -> str:
+    """Normaliza ``created_at`` a segundos UTC (quita microsegundos legacy).
+
+    Las filas antiguas se guardaron con ``.%f``; al leerlas se normalizan para
+    que el contrato sea estable. Si el valor no es interpretable se devuelve tal
+    cual, de modo que la validación del schema lo haga visible.
+    """
+
+    text = value.strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return _format_utc(parsed)
 
 
 def _new_id() -> str:
@@ -34,10 +59,11 @@ class AnalysisRecord:
     category: str
     probability: float
     scores: dict[str, float]
+    model_name: str
+    model_version: str
+    model_dataset: str
     display_name: str | None = None
     is_demo: bool = False
-    model_name: str = "yolov8n-cls"
-    model_version: str = "v0.1"
     id: str = field(default_factory=_new_id)
     created_at: str = field(default_factory=_now_iso)
 
@@ -53,7 +79,8 @@ class AnalysisRecord:
             is_demo=bool(row["is_demo"]),
             model_name=row["model_name"],
             model_version=row["model_version"],
-            created_at=row["created_at"],
+            model_dataset=row["model_dataset"],
+            created_at=_normalize_created_at(row["created_at"]),
         )
 
 
@@ -64,7 +91,7 @@ class AnalysisRepository(Protocol):
     ) -> tuple[list[AnalysisRecord], int]: ...
     def get_by_account(self, analysis_id: str, account_id: str) -> AnalysisRecord | None: ...
     def ensure_schema(self) -> None: ...
-    def seed_demo(self, account_id: str) -> int: ...
+    def seed_demo(self, account_id: str, model_info: ModelInfo) -> int: ...
     def close(self) -> None: ...
 
 
@@ -96,6 +123,7 @@ class SqliteAnalysisRepository:
                     is_demo       INTEGER NOT NULL DEFAULT 0,
                     model_name    TEXT NOT NULL,
                     model_version TEXT NOT NULL,
+                    model_dataset TEXT NOT NULL,
                     created_at    TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_analyses_account_created
@@ -111,8 +139,9 @@ class SqliteAnalysisRepository:
                         """
                         INSERT INTO analyses (
                             id, account_id, category, probability, scores_json,
-                            display_name, is_demo, model_name, model_version, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            display_name, is_demo, model_name, model_version,
+                            model_dataset, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             record.id,
@@ -124,6 +153,7 @@ class SqliteAnalysisRepository:
                             int(record.is_demo),
                             record.model_name,
                             record.model_version,
+                            record.model_dataset,
                             record.created_at,
                         ),
                     )
@@ -146,7 +176,7 @@ class SqliteAnalysisRepository:
                 """
                 SELECT * FROM analyses
                 WHERE account_id = ?
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ? OFFSET ?
                 """,
                 (account_id, limit, offset),
@@ -164,7 +194,7 @@ class SqliteAnalysisRepository:
             ).fetchone()
         return AnalysisRecord.from_row(row) if row is not None else None
 
-    def seed_demo(self, account_id: str) -> int:
+    def seed_demo(self, account_id: str, model_info: ModelInfo) -> int:
         """Inserta los 4 registros demo si la cuenta aún no tiene ninguno."""
         demo: list[DemoRecord] = [
             ("Exploración inicial", "MildDemented", 0.84),
@@ -185,8 +215,9 @@ class SqliteAnalysisRepository:
                     """
                     INSERT INTO analyses (
                         id, account_id, category, probability, scores_json,
-                        display_name, is_demo, model_name, model_version, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+                        display_name, is_demo, model_name, model_version,
+                        model_dataset, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                     """,
                     (
                         _new_id(),
@@ -195,8 +226,9 @@ class SqliteAnalysisRepository:
                         probability,
                         json.dumps(scores),
                         display_name,
-                        "yolov8n-cls",
-                        "v0.1",
+                        model_info.name,
+                        model_info.version,
+                        model_info.dataset,
                         _now_iso(),
                     ),
                 )

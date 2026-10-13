@@ -20,7 +20,9 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import FastAPI
 
-from app.core.config import Settings
+from app.core.categories import Category
+from app.core.config import BACK_ROOT, Settings
+from app.core.model_info import ModelInfo
 from app.core.security import SupabaseJWTVerifier
 from app.main import create_app
 from app.services.analyses import SqliteAnalysisRepository
@@ -149,15 +151,14 @@ def build_verifier(
 class FakeInference:
     """Inferencia determinista para las rutas: no toca onnxruntime."""
 
-    ready: bool = True
-    model_name = "fake-cls"
-    model_version = "test"
-
     def __init__(
         self,
         scores: dict[str, float] | None = None,
         *,
         ready: bool = True,
+        name: str = "fake-cls",
+        version: str = "test",
+        dataset: str = "ADNI",
     ) -> None:
         self._scores = scores or {
             "MildDemented": 0.1,
@@ -166,6 +167,16 @@ class FakeInference:
             "VeryMildDemented": 0.2,
         }
         self.ready = ready
+        self.model_info = (
+            ModelInfo(
+                name=name,
+                version=version,
+                dataset=dataset,
+                classes=[category.value for category in Category],
+            )
+            if ready
+            else None
+        )
 
     def analyze(self, image: object) -> dict[str, float]:
         return dict(self._scores)
@@ -184,9 +195,9 @@ def build_app(
     }
     if settings_overrides:
         overrides.update(settings_overrides)
-    # model_path=None a propósito: evita que un MODEL_PATH del entorno active
+    # model_dir=None a propósito: evita que un MODEL_DIR del entorno active
     # el modelo real en pruebas que no lo piden explícitamente.
-    settings = Settings(_env_file=None, model_path=None, **overrides)
+    settings = Settings(_env_file=None, model_dir=None, **overrides)
     services = Services(
         inference=inference if inference is not None else UnavailableInference(),
         token_verifier=verifier,
@@ -222,4 +233,31 @@ async def make_verifier(stub: JWKSStub):
     yield make
     for verifier in created:
         await verifier.aclose()
+
+
+PROJECT_DB = BACK_ROOT / "data" / "nerilum.db"
+
+
+def _db_state(path: Path) -> int | None:
+    return path.stat().st_mtime_ns if path.exists() else None
+
+
+def assert_project_db_untouched(before: int | None, after: int | None, path: Path) -> None:
+    assert after == before, (
+        "GUARDIA DE HIGIENE: la suite creó o modificó la base del proyecto "
+        f"({path}). Los tests no deben usar la DB del proyecto; pasa "
+        "database_path apuntando a tmp_path."
+    )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _project_db_guard():
+    # Guardia de higiene: la suite no debe crear/modificar back/data/nerilum.db.
+    # mtime_ns detecta creación y modificación, de modo que no da falso positivo
+    # si el desarrollador ya tenía un .db local y la suite no lo toca.
+    # Nota: si se arranca la app a mano mientras corre la suite, la app
+    # recrearía el .db y esta guardia fallaría (caso raro, aceptado).
+    before = _db_state(PROJECT_DB)
+    yield
+    assert_project_db_untouched(before, _db_state(PROJECT_DB), PROJECT_DB)
 

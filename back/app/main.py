@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings, get_settings, warn_legacy_model_env
 from app.core.errors import register_error_handlers
 from app.core.logging import configure_logging
 from app.routes import analyses, auth, health
@@ -19,6 +19,7 @@ def create_app(
     configure_logging(
         level=logging.DEBUG if config.app_env == "development" else logging.INFO
     )
+    warn_legacy_model_env()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

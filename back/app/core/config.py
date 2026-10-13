@@ -1,3 +1,5 @@
+import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -8,12 +10,27 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACK_ROOT = Path(__file__).resolve().parents[2]
 
-DEFAULT_CLASSES = [
-    "MildDemented",
-    "ModerateDemented",
-    "NonDemented",
-    "VeryMildDemented",
-]
+logger = logging.getLogger("nerilum")
+
+# Variables de modelo obsoletas: MODEL_DIR + model_card.json las sustituyen.
+LEGACY_MODEL_ENV_VARS = ("MODEL_PATH", "MODEL_NAME", "MODEL_VERSION", "MODEL_DATASET")
+
+
+def warn_legacy_model_env() -> None:
+    """Avisa si el entorno aún define variables de modelo obsoletas.
+
+    Una misconfiguración silenciosa (arrancar con ``MODEL_PATH`` y ver
+    ``model_ready=false`` sin motivo aparente) es peligrosa en un sistema
+    médico. Solo se registran los **nombres** de las variables presentes,
+    nunca sus valores.
+    """
+
+    present = [name for name in LEGACY_MODEL_ENV_VARS if os.environ.get(name)]
+    if present:
+        logger.warning(
+            "%s ya no se usa(n); usa MODEL_DIR (ver README).",
+            ", ".join(present),
+        )
 
 
 class Settings(BaseSettings):
@@ -39,15 +56,13 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=list)
     database_url: str | None = None
     database_path: Path = Field(default=BACK_ROOT / "data" / "nerilum.db")
-    model_path: Path | None = None
-    model_name: str = "yolov8n-cls"
-    model_version: str = "v0.1"
-    model_dataset: str = "Alzheimer MRI Dataset (Kaggle)"
+    model_dir: Path | None = None
     model_input_size: int | None = Field(default=None, ge=32)
     model_resize_mode: Literal["letterbox", "center_crop", "stretch"] = "center_crop"
     model_softmax: bool = False
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1)
-    max_image_dimension: int = Field(default=4096, ge=16)
+    max_image_dimension: int = Field(default=4096, ge=1)
+    max_image_pixels: int = Field(default=16_777_216, ge=1)
     retry_after_seconds: int = Field(default=5, ge=1)
     seed_demo: bool = False
     seed_demo_account_id: UUID | None = None

@@ -12,8 +12,9 @@ router = APIRouter(tags=["health"])
 
 @router.get("/health", response_model=HealthResponse, responses=SERVER_ERRORS)
 def health(services: Annotated[Services, Depends(get_services)]) -> HealthResponse:
+    model_info = services.inference.model_info
     return HealthResponse(
         model_ready=services.inference.ready,
-        model_name=services.inference.model_name,
-        model_version=services.inference.model_version,
+        model_name=model_info.name if model_info else None,
+        model_version=model_info.version if model_info else None,
     )
