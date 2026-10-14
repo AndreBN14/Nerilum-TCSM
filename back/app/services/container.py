@@ -6,6 +6,7 @@ import httpx
 from app.core.config import BACK_ROOT, Settings
 from app.core.security import SupabaseJWTVerifier, TokenVerifier
 from app.services.analyses import AnalysisRepository, SqliteAnalysisRepository
+from app.services.analyses_pg import PostgresAnalysisRepository
 from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
 
 logger = logging.getLogger("nerilum")
@@ -65,7 +66,10 @@ def create_services(settings: Settings) -> Services:
     )
 
     inference = _build_inference(settings)
-    analyses = SqliteAnalysisRepository(settings.database_path)
+    if settings.use_postgres and settings.database_url:
+        analyses = PostgresAnalysisRepository(settings.database_url)
+    else:
+        analyses = SqliteAnalysisRepository(settings.database_path)
 
     services = Services(inference=inference, token_verifier=verifier, analyses=analyses)
 

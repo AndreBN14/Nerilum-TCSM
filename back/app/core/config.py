@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     seed_demo_account_id: UUID | None = None
 
     @property
+    def use_postgres(self) -> bool:
+        return bool(self.database_url and str(self.database_url).strip())
+
+    @property
     def resolved_issuer(self) -> str | None:
         """Emisor efectivo: el explícito o {SUPABASE_URL}/auth/v1."""
 
