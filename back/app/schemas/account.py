@@ -1,4 +1,14 @@
-"""Reservado para un futuro DTO público si se necesita una API de perfiles.
+from uuid import UUID
 
-No define passwords ni duplica las identidades de Supabase Auth.
-"""
+from pydantic import BaseModel
+
+
+class Account(BaseModel):
+    """Identidad derivada del JWT validado; no de una tabla local."""
+
+    id: UUID
+    email: str | None = None
+
+
+class AccountResponse(BaseModel):
+    account: Account

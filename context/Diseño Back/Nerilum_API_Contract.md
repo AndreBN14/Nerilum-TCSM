@@ -1,5 +1,8 @@
 # Nerilum API: contrato v1
 
+> **Copia de referencia.** El contrato canónico está en
+> `back/Nerilum_API_Contract.md`; cualquier edición debe hacerse allí.
+
 Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhost:8000/docs`.
 
 ## Decisiones de v1 (simples a propósito)
@@ -16,31 +19,21 @@ Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhos
 
 ## Modelo (ONNX)
 
-- Archivo: `backend/app/models/model.onnx` (si pesa mucho, usar Git LFS o excluirlo y documentar la descarga).
+- Archivo: `back/app/models/best.onnx` (5.7 MB, excluido de Git en `.gitignore`; documentar la descarga en `app/models/README.md`).
 - Runtime: `onnxruntime` + `Pillow` + `numpy`. No hace falta `ultralytics` en producción.
 - Preprocesado: RGB, redimensionar al tamaño de entrada del modelo (normalmente 224×224), escalar a 0–1, formato NCHW `float32`. Verificar contra el `imgsz` usado en el entrenamiento.
-- Etiquetas: el orden de las clases debe coincidir con el entrenamiento. Léelo del metadato `names` del ONNX o fíjalo en `config.py`:
-  `NonDemented`, `VeryMildDemented`, `MildDemented`, `ModerateDemented`.
+- Etiquetas: el orden de las clases debe coincidir con el entrenamiento. Léelo del metadato `names` del ONNX; no se fija en `config.py`:
+  `MildDemented`, `ModerateDemented`, `NonDemented`, `VeryMildDemented` (orden real de `best.onnx`).
+- Entrada: NCHW `float32`, batch 1, 3×224×224 (`imgsz` del metadato). Preprocesado RGB → resize cuadrado → escala 0–1.
 - Si el archivo no existe o falla al cargar: `model_ready = false` y `POST /analyses` responde `503 model_unavailable`.
 
 ## Formato de error (todas las rutas)
 
 ```json
-{ "error": { "code": "invalid_credentials", "message": "Correo o contraseña incorrectos." } }
+{ "error": { "code": "invalid_token", "message": "Token de acceso inválido." } }
 ```
 
-Registrar handlers para `RequestValidationError` y `HTTPException`, de modo que FastAPI no devuelva su formato por defecto.
-
-| HTTP | code | Cuándo |
-|---|---|---|
-| 401 | `invalid_credentials` | Login fallido (mismo mensaje para correo inexistente y contraseña errónea). |
-| 401 | `invalid_token` | Token ausente, inválido o expirado. |
-| 409 | `email_exists` | Registro con correo ya usado. |
-| 422 | `validation_error` | Email mal formado, contraseña < 8, nombre vacío. |
-| 400 | `invalid_image` | El archivo no se puede decodificar como imagen. |
-| 413 | `too_large` | Archivo > 10 MB. |
-| 415 | `unsupported_media_type` | No es JPG/JPEG/PNG (se valida por firma del archivo, no solo por extensión). |
-| 503 | `model_unavailable` | El modelo no está cargado. El cliente lo traduce a `AnalysisUnavailable`. |
+La envoltura y la tabla completa de códigos (incluidos `429`, `500` y `Retry-After` en los `503`) viven en la fuente canónica: `back/Nerilum_API_Contract.md` → sección «Formato de error». No duplicar aquí.
 
 ## Rutas
 
@@ -104,10 +97,10 @@ Errores: 401 `invalid_token` (el frontend cae a bienvenida).
   "display_name": null,
   "probability": 0.84,
   "scores": {
-    "NonDemented": 0.02,
-    "VeryMildDemented": 0.05,
     "MildDemented": 0.84,
-    "ModerateDemented": 0.09
+    "ModerateDemented": 0.09,
+    "NonDemented": 0.02,
+    "VeryMildDemented": 0.05
   },
   "is_demo": false,
   "model": { "name": "yolo11n-cls", "version": "v0.1", "dataset": "Alzheimer MRI Dataset (Kaggle)" },

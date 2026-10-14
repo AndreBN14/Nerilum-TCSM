@@ -1,10 +1,10 @@
 # Nerilum — arquitectura y contrato de integración vigente
 
-**Versión vigente: 2.0 · 9 de octubre de 2026**
+**Versión vigente: 2.1 · 9 de octubre de 2026**
 
 Este documento es la referencia vigente para autenticación, perfiles e integración futura del backend de Nerilum. Sustituye las decisiones de `Nerilum_API_Contract.md` sobre autenticación propia, JWT de siete días sin refresh, SQLite y tablas `accounts`/`analyses` ya definidas. El documento anterior se conserva como propuesta histórica; sus ejemplos no constituyen una API implementada.
 
-La versión 2.0 documenta el estado actual y separa las propuestas futuras de las decisiones aprobadas. **No establece todavía un contrato definitivo de análisis ni autoriza crear sus tablas.**
+La versión 2.1 registra la **Fase 1 del backend FastAPI**: verificación de JWT de Supabase (ES256 vía JWKS) y endpoints `GET /api/v1/health` y `GET /api/v1/auth/me`. **No establece todavía un contrato definitivo de análisis ni autoriza crear sus tablas.**
 
 ## 1. Estado actual del proyecto
 
@@ -16,7 +16,7 @@ La versión 2.0 documenta el estado actual y separa las propuestas futuras de la
 | Confirmación de correo | Flujo de instrucciones y reenvío implementado; requiere Confirm Email activo en Supabase. |
 | Proyecto Supabase | Configurado por el responsable del proyecto; este informó la ejecución de la migración de perfiles. |
 | Verificación remota | La compilación y las pruebas locales no demuestran por sí solas un registro/login remoto exitoso. La prueba completa en dispositivo permanece por confirmar. |
-| Backend FastAPI | No implementado. `back/` contiene preparación de entorno y documentación. |
+| Backend FastAPI | **Fase 1 implementada**: verificación JWT ES256/JWKS, `GET /api/v1/health` y `GET /api/v1/auth/me`. Sin base de datos ni inferencia. |
 | Inferencia real | No conectada. Seleccionar una imagen no genera una categoría simulada como resultado real. |
 | Tablas de análisis, imágenes y resultados | Pendientes de definir y crear. |
 
@@ -89,12 +89,13 @@ No se planifican, para el acceso actual, estas rutas propias:
 ```text
 POST /auth/register
 POST /auth/login
-GET  /auth/me
 POST /auth/refresh
 POST /auth/logout
 ```
 
 Sus operaciones corresponden a Supabase Auth. Una API de perfil adicional solo se incorporará si existe una necesidad concreta; por ahora Flutter consulta Supabase directamente. La recuperación de contraseña aún no tiene un flujo funcional implementado.
+
+La Fase 1 del backend sí expone `GET /api/v1/auth/me` como endpoint de **identidad de solo lectura**: no emite tokens ni gestiona sesiones, solo devuelve el `id` (claim `sub`) y el `email` opcional del JWT ya validado. No duplica `register`/`login`/`refresh`/`logout`.
 
 ## 4. PostgreSQL y perfiles
 
@@ -136,19 +137,53 @@ Se ejecuta **una sola copia una sola vez**. El script depende de Supabase Auth, 
 
 No se crean todavía tablas `analyses`, diagnósticos, imágenes, resultados ni una tabla `accounts` que duplique `auth.users`.
 
-## 5. Responsabilidad futura de FastAPI
+## 5. Responsabilidad de FastAPI
 
-FastAPI se incorporará para las funcionalidades de análisis que se acuerden. Flutter enviará el token de acceso emitido por Supabase:
+FastAPI se incorpora para las funcionalidades de análisis que se acuerden. Flutter envía el token de acceso emitido por Supabase:
 
 ```http
 Authorization: Bearer <access_token_de_supabase>
 ```
 
-Antes de utilizarlo, el backend deberá verificar firma, emisor, audiencia y expiración según la configuración efectiva de Supabase; no basta con decodificar el token. El UUID de identidad se obtiene del claim `sub` validado, no de un correo o `user_id` enviado libremente en el cuerpo.
+Antes de utilizarlo, el backend verifica firma, emisor, audiencia y expiración; no basta con decodificar el token. El UUID de identidad se obtiene del claim `sub` validado, no de un correo o `user_id` enviado libremente en el cuerpo.
 
-El mecanismo de verificación se elegirá según la configuración de claves de firma del proyecto Supabase. Los recursos futuros deberán estar limitados al propietario autenticado, incluidos historial y detalle.
+### 5.1 Fase 1 implementada (autenticación)
 
-La base `/api/v1`, FastAPI y su documentación local en `/docs` se mantienen como **propuesta de organización futura**, no como endpoints disponibles actualmente.
+La Fase 1 verifica los JWT de Supabase con **ES256** y las claves públicas de **JWKS**:
+
+- `app/core/security.py`: `SupabaseJWTVerifier` obtiene las claves de
+  `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` con `httpx.AsyncClient`, cachea
+  por `kid` (TTL configurable) y refresca ante un `kid` desconocido con
+  `asyncio.Lock` e intervalo mínimo de refresco.
+- Solo se admite `ES256` y claves `EC`/`P-256`. Se exigen y validan `exp`,
+  `iss`, `aud` y `sub`; `nbf` se valida si está presente. La tolerancia
+  temporal es `0` por defecto.
+- `app/routes/dependencies.py`: `get_current_user` (basado en `HTTPBearer`)
+  inyecta `AuthenticatedUser(id: UUID, email: str | None)`.
+- Errores: token inválido → `401 invalid_token`; JWKS o verificación no
+  disponible → `503 service_unavailable`.
+
+| Método | Ruta | Auth | Respuesta |
+| --- | --- | --- | --- |
+| GET | `/api/v1/health` | No | `{ "status": "ok", "model_ready": false }`. |
+| GET | `/api/v1/auth/me` | Bearer | `{ "account": { "id": "<uuid>", "email": "…" } }` |
+
+La ausencia de configuración de Supabase no impide arrancar ni responder en
+`/api/v1/health`; los endpoints protegidos fallan con `503`. La verificación se
+probó con claves EC y JWKS simulados; **la integración con un proyecto Supabase
+real no se considera validada** hasta una prueba manual o de integración
+explícita.
+
+OpenAPI declara el esquema `HTTPBearer` (`type: http`, `scheme: bearer`,
+`bearerFormat: JWT`) y `/api/v1/auth/me` lo referencia como requisito de
+seguridad, de modo que Swagger UI muestra el botón **Authorize**. En el diálogo
+se pega **solo** el `access_token`: Swagger añade `Bearer ` y envía
+`Authorization: Bearer <token>`. Las respuestas de `/docs` y `/openapi.json` se
+sirven con `Cache-Control: no-store`.
+
+### 5.2 Fases pendientes
+
+Los recursos futuros deberán estar limitados al propietario autenticado, incluidos historial y detalle. La base `/api/v1`, FastAPI y su documentación local en `/docs` ya están disponibles para las rutas implementadas.
 
 ## 6. Análisis e inferencia: contrato pendiente
 
@@ -240,7 +275,7 @@ Estas preferencias no reemplazan los tokens y el ciclo de sesión real de Supaba
 
 Los errores de Supabase Auth y los de la futura API FastAPI tienen fuentes diferentes. El frontend actualmente muestra mensajes comprensibles, pero no debe suponerse que Supabase devuelve el formato `{ "error": { "code": ..., "message": ... } }` del contrato anterior.
 
-Un formato unificado de errores podrá definirse para FastAPI al implementar sus endpoints. Sus códigos deberán cubrir autenticación del token, autorización, validación de archivos, indisponibilidad de modelo y errores de procesamiento, conforme a las operaciones finalmente aprobadas.
+Un formato unificado de errores se define en la fuente canónica `back/Nerilum_API_Contract.md` (sección «Formato de error»): envoltura `{ "error": { "code": ..., "message": ... } }`, códigos de token/validación/modelo, `429 rate_limited`, `500 internal_error` y `Retry-After` en los `503`. Aquí no se duplica la tabla.
 
 ### Configuración Flutter
 
@@ -261,17 +296,33 @@ El directorio vigente es `back/`, no `backend/`:
 
 - `back/.env`: configuración local, excluida de Git.
 - `back/.env.example`: plantilla versionada sin credenciales.
-- `back/README.md`: estado de preparación.
+- `back/README.md`: estado, variables y cómo ejecutar/probar.
 
-Actualmente no existe un proceso FastAPI que cargue esas variables. `back/.env` tampoco configura Flutter. La conexión SQL directa o el uso administrativo de Supabase en el backend solo se agregarán si las futuras funcionalidades lo requieren.
+FastAPI carga esas variables con `pydantic-settings`. Las relevantes para la
+Fase 1 son `SUPABASE_URL`, `SUPABASE_JWT_AUDIENCE` (`authenticated`),
+`SUPABASE_JWT_ISSUER` (opcional), `JWT_LEEWAY_SECONDS` (`0`),
+`JWKS_CACHE_TTL_SECONDS` (`3600`), `JWKS_MIN_REFRESH_INTERVAL_SECONDS` (`60`) y
+`JWKS_TIMEOUT_SECONDS` (`5`). `DATABASE_URL` queda reservada para la Fase 2 y
+`MODEL_PATH` para la Fase 4. `back/.env` no configura Flutter: el frontend
+conserva sus `--dart-define`. Los tokens y claves privadas nunca se guardan en
+el repositorio.
 
 ## 11. Próximas decisiones y validaciones
 
 1. Confirmar el registro, enlace de correo, login, restauración y cierre de sesión reales en dispositivo.
 2. Verificar acceso al perfil propio y aislamiento entre dos usuarios con RLS.
-3. Definir el contrato real de entrada/salida del análisis y su modelo evaluado.
-4. Acordar almacenamiento, retención, nombre asignado, identificadores y estructura del historial.
-5. Diseñar tablas y migraciones de análisis solo después de esos acuerdos.
-6. Implementar FastAPI, validación de tokens Supabase, adaptador remoto Flutter y pruebas de integración.
+3. Validar la Fase 1 contra un proyecto Supabase real: obtener un `access_token` legítimo y comprobar `GET /api/v1/auth/me` (la suite actual usa claves EC y JWKS simulados).
+4. Definir el contrato real de entrada/salida del análisis y su modelo evaluado.
+5. Acordar almacenamiento, retención, nombre asignado, identificadores y estructura del historial.
+6. Diseñar tablas y migraciones de análisis solo después de esos acuerdos (Fase 2), implementar el endpoint de análisis (Fase 3) e integrar el modelo ONNX (Fase 4).
+
+### Estado de fases del backend
+
+| Fase | Alcance | Estado |
+| --- | --- | --- |
+| 1 | Verificación JWT Supabase (ES256/JWKS), `/health`, `/auth/me` | Completada (pruebas con JWKS simulado; integración real pendiente de validar). |
+| 2 | Persistencia PostgreSQL/Supabase e historial | Pendiente. |
+| 3 | Endpoint de análisis con interfaz `Classifier` | Pendiente. |
+| 4 | Integración del modelo ONNX | Pendiente. |
 
 Referencias complementarias: `frontend/ARCHITECTURE.md`, `frontend/SUPABASE_SETUP.md` y las especificaciones visuales en `context/Diseño Front/`.
