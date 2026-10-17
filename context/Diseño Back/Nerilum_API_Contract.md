@@ -19,11 +19,11 @@ Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhos
 
 ## Modelo (ONNX)
 
-- Archivo: `back/app/models/best.onnx` (5.7 MB, excluido de Git en `.gitignore`; documentar la descarga en `app/models/README.md`).
+- Archivo: `back/app/models/nerilum-alzheimer-mri-classifier.onnx` (5.7 MB, excluido de Git en `.gitignore`; es un asset del GitHub Release y se descarga con `back/scripts/download_model.py`, ver `app/models/README.md`).
 - Runtime: `onnxruntime` + `Pillow` + `numpy`. No hace falta `ultralytics` en producción.
 - Preprocesado: RGB, redimensionar al tamaño de entrada del modelo (normalmente 224×224), escalar a 0–1, formato NCHW `float32`. Verificar contra el `imgsz` usado en el entrenamiento.
 - Etiquetas: el orden de las clases debe coincidir con el entrenamiento. Léelo del metadato `names` del ONNX; no se fija en `config.py`:
-  `MildDemented`, `ModerateDemented`, `NonDemented`, `VeryMildDemented` (orden real de `best.onnx`).
+  `MildDemented`, `ModerateDemented`, `NonDemented`, `VeryMildDemented` (orden real de `nerilum-alzheimer-mri-classifier.onnx`).
 - Entrada: NCHW `float32`, batch 1, 3×224×224 (`imgsz` del metadato). Preprocesado RGB → resize cuadrado → escala 0–1.
 - Si el archivo no existe o falla al cargar: `model_ready = false` y `POST /analyses` responde `503 model_unavailable`.
 
@@ -162,7 +162,7 @@ backend/
 ├── app/
 │   ├── main.py
 │   ├── core/{config.py, security.py}
-│   ├── models/model.onnx
+│   ├── models/{*.onnx, model_card.json}
 │   ├── schemas/{account.py, analysis.py, error.py}
 │   ├── routes/{auth.py, analyses.py, health.py}
 │   └── services/inference.py     # carga ONNX, preprocesa, softmax si aplica

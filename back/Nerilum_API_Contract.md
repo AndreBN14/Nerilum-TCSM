@@ -20,12 +20,12 @@ Base: `/api/v1`. JSON en `snake_case`. Pensado para probarse en `http://localhos
 
 ## Modelo (ONNX)
 
-- Archivo: `back/app/models/best.onnx` (5.7 MB, excluido de Git en `.gitignore`; documentar la descarga en `app/models/README.md`).
+- Archivo: `back/app/models/nerilum-alzheimer-mri-classifier.onnx` (5.7 MB, excluido de Git en `.gitignore`; es un asset del GitHub Release y se descarga con `back/scripts/download_model.py`, ver `app/models/README.md`).
 - Runtime: `onnxruntime` + `Pillow` + `numpy`. No hace falta `ultralytics` en producción.
 - Preprocesado: RGB, resize del lado corto al tamaño de entrada del modelo (224×224) + recorte central (`MODEL_RESIZE_MODE=center_crop`), escala a 0–1, formato NCHW `float32`. `center_crop` reproduce el pipeline de inferencia de referencia de Ultralytics YOLOv8-cls; los argumentos exactos del entrenamiento no están disponibles, por lo que la equivalencia completa no está demostrada.
 - Salida: el ONNX de este artefacto ya devuelve probabilidades normalizadas (softmax integrado en el head `Classify`). `MODEL_SOFTMAX=false`; no aplicar softmax de nuevo.
 - Etiquetas: el orden de las clases debe coincidir con el entrenamiento. Léelo del metadato `names` del ONNX; no se fija en `config.py`:
-  `MildDemented`, `ModerateDemented`, `NonDemented`, `VeryMildDemented` (orden real de `best.onnx`).
+  `MildDemented`, `ModerateDemented`, `NonDemented`, `VeryMildDemented` (orden real de `nerilum-alzheimer-mri-classifier.onnx`).
 - Entrada: NCHW `float32`, batch 1, 3×224×224 (`imgsz` del metadato). Preprocesado RGB → resize lado corto + recorte central → escala 0–1.
 - Si el archivo no existe o falla al cargar: `model_ready = false` y `POST /analyses` responde `503 model_unavailable`.
 
@@ -259,7 +259,7 @@ backend/
 ├── app/
 │   ├── main.py
 │   ├── core/{config.py, security.py}
-│   ├── models/model.onnx
+│   ├── models/{*.onnx, model_card.json}
 │   ├── schemas/{account.py, analysis.py, error.py}
 │   ├── routes/{auth.py, analyses.py, health.py}
 │   └── services/inference.py     # carga ONNX, preprocesa, softmax solo si devuelve logits

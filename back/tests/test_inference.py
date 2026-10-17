@@ -1,7 +1,8 @@
 """Pruebas de la capa de inferencia ONNX (carga, preprocesado, softmax y mapeo).
 
-El clasificador real solo se ejercita si ``best.onnx`` está presente; si no,
-el resto de pruebas cubren el comportamiento sin modelo.
+El clasificador real solo se ejercita si hay un ``*.onnx`` en la carpeta del
+modelo; si no, el resto de pruebas cubren el comportamiento sin modelo. El
+nombre del artefacto no se fija aquí: se descubre el único ``*.onnx`` presente.
 """
 
 from __future__ import annotations
@@ -17,7 +18,11 @@ from app.core.config import BACK_ROOT
 from app.services.inference import OnnxClassifier, UnavailableInference
 
 MODEL_DIR = BACK_ROOT / "app" / "models"
-MODEL = MODEL_DIR / "best.onnx"
+# El nombre del artefacto no se fija: se usa el único *.onnx de MODEL_DIR
+# (p. ej. nerilum-alzheimer-mri-classifier.onnx). Si no hay ninguno, MODEL es
+# None y las pruebas que ejercitan el modelo se omiten.
+MODEL = next(iter(sorted(MODEL_DIR.glob("*.onnx"))), None)
+MODEL_AVAILABLE = MODEL is not None and MODEL.exists()
 MISSING_DIR = MODEL_DIR / "does-not-exist"
 
 EXPECTED_NAMES = [
@@ -67,7 +72,7 @@ def test_preprocess_default_resize_mode_is_center_crop() -> None:
 
 
 def test_default_softmax_is_disabled() -> None:
-    # El ONNX de best.onnx ya devuelve probabilidades normalizadas.
+    # El ONNX ya devuelve probabilidades normalizadas.
     assert OnnxClassifier(MISSING_DIR)._apply_softmax is False
 
 
@@ -94,15 +99,15 @@ def test_center_crop_matches_ultralytics_reference() -> None:
     assert np.array_equal(batch, reference(image, 224))
 
 
-@pytest.mark.skipif(not MODEL.exists(), reason="best.onnx no está disponible")
+@pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_card_absent_leaves_model_not_ready(tmp_path) -> None:
-    shutil.copy(MODEL, tmp_path / "best.onnx")
+    shutil.copy(MODEL, tmp_path / MODEL.name)
     service = OnnxClassifier(tmp_path)
     assert service.ready is False
     assert service.model_info is None
 
 
-@pytest.mark.skipif(not MODEL.exists(), reason="best.onnx no está disponible")
+@pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_real_model_loads_info_from_card_and_metadata() -> None:
     service = OnnxClassifier(MODEL_DIR)
     assert service.ready is True
@@ -118,7 +123,7 @@ def test_real_model_loads_info_from_card_and_metadata() -> None:
     assert batch.dtype.name == "float32"
 
 
-@pytest.mark.skipif(not MODEL.exists(), reason="best.onnx no está disponible")
+@pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_names_order_matches_onnx_metadata() -> None:
     service = OnnxClassifier(MODEL_DIR)
     raw = service._session.get_modelmeta().custom_metadata_map.get("names")
@@ -128,7 +133,7 @@ def test_names_order_matches_onnx_metadata() -> None:
     assert service.model_info.classes == EXPECTED_NAMES
 
 
-@pytest.mark.skipif(not MODEL.exists(), reason="best.onnx no está disponible")
+@pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_real_model_output_is_already_normalized() -> None:
     # La salida cruda del ONNX ya es una distribución de probabilidad:
     # suma 1.0 y valores en (0, 1). No debe aplicarse softmax de nuevo.
@@ -142,7 +147,7 @@ def test_real_model_output_is_already_normalized() -> None:
     assert scores.sum() == pytest.approx(1.0, abs=1e-4)
 
 
-@pytest.mark.skipif(not MODEL.exists(), reason="best.onnx no está disponible")
+@pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_real_model_analyze_preserves_normalized_probabilities() -> None:
     service_raw = OnnxClassifier(MODEL_DIR, softmax=False)
     service_soft = OnnxClassifier(MODEL_DIR, softmax=True)
@@ -161,7 +166,7 @@ def test_real_model_analyze_preserves_normalized_probabilities() -> None:
     assert int(np.argmax(raw)) == int(np.argmax(soft))
 
 
-@pytest.mark.skipif(not MODEL.exists(), reason="best.onnx no está disponible")
+@pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_real_model_class_mapping_and_argmax() -> None:
     service = OnnxClassifier(MODEL_DIR)
     image = Image.new("RGB", (256, 256), (180, 180, 180))
