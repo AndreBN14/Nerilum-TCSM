@@ -48,3 +48,18 @@ jobs:
         run: python scripts/download_model.py
       - name: Run tests
         run: python -m pytest -q
+
+  deploy:
+    name: Deploy to Render (backend)
+    runs-on: ubuntu-latest
+    needs: [tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    concurrency:
+      group: backend-deploy-${{ github.ref }}
+      cancel-in-progress: true
+    env:
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_BACK }}
+    steps:
+      - name: Trigger Render deploy
+        if: ${{ env.RENDER_DEPLOY_HOOK != '' }}
+        run: curl -X POST -fsS --retry 3 --retry-all-errors "${{ env.RENDER_DEPLOY_HOOK }}"
