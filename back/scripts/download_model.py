@@ -9,6 +9,7 @@ Uso::
     python scripts/download_model.py
     MODEL_URL=https://... python scripts/download_model.py
     MODEL_SHA256=<hex> python scripts/download_model.py
+    MODEL_TOKEN=<pat> python scripts/download_model.py
 
 Variables de entorno:
 
@@ -18,6 +19,10 @@ Variables de entorno:
 - ``MODEL_FILENAME``: nombre del archivo destino. Por defecto, el del asset.
 - ``MODEL_SHA256``: hash SHA-256 esperado (opcional). Si se define y no
   coincide, la descarga se descarta y el script falla.
+- ``MODEL_TOKEN``: PAT con permiso de lectura para bajar el asset de un
+  repositorio privado (opcional). Si falta, se usa ``GITHUB_TOKEN``. El header
+  ``Authorization`` se elimina si la descarga redirige a otro host (la URL
+  firmada de GitHub no lo acepta).
 
 Solo usa la librería estándar: no añade dependencias al backend.
 """
@@ -69,6 +74,36 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+class _AuthRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Elimina ``Authorization`` al redirigir a otro host.
+
+    GitHub responde con un 302 a una URL firmada en otro host (S3/objects); esa
+    URL ya viene firmada y rechaza un header ``Authorization`` adicional.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is not None:
+            old_host = urllib.parse.urlparse(req.full_url).hostname
+            new_host = urllib.parse.urlparse(newurl).hostname
+            if new_host != old_host:
+                new_req.headers.pop("Authorization", None)
+                new_req.unredirected_hdrs.pop("Authorization", None)
+        return new_req
+
+
+def _download_stream(url: str):
+    """Abre el asset con autenticación opcional y devuelve la respuesta."""
+
+    token = os.environ.get("MODEL_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    request = urllib.request.Request(url)
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+        request.add_header("Accept", "application/octet-stream")
+    opener = urllib.request.build_opener(_AuthRedirectHandler)
+    return opener.open(request)
+
+
 def main() -> int:
     url = os.environ.get("MODEL_URL") or DEFAULT_URL
     expected_sha = (os.environ.get("MODEL_SHA256") or "").strip().lower() or None
@@ -85,7 +120,7 @@ def main() -> int:
     tmp_path = Path(tmp_name)
     try:
         try:
-            with urllib.request.urlopen(url) as response, tmp_path.open("wb") as out:
+            with _download_stream(url) as response, tmp_path.open("wb") as out:
                 shutil.copyfileobj(response, out, length=CHUNK_SIZE)
         except urllib.error.URLError as exc:
             print(f"Error al descargar el modelo: {exc}", file=sys.stderr)
