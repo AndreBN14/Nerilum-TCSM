@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Protocol
 
 from app.core.errors import ApiException
+from app.core.history_sort import HistorySort, history_order_sql
+from app.core.idempotency import require_same_request
 from app.core.model_info import ModelInfo
 
 DemoRecord = tuple[str, str, float]
@@ -66,6 +68,12 @@ class AnalysisRecord:
     is_demo: bool = False
     id: str = field(default_factory=_new_id)
     created_at: str = field(default_factory=_now_iso)
+    idempotency_key: str | None = None
+    request_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        if (self.idempotency_key is None) != (self.request_hash is None):
+            raise ValueError("La clave de idempotencia y la huella deben existir juntas.")
 
     @staticmethod
     def from_row(row: sqlite3.Row) -> "AnalysisRecord":
@@ -81,15 +89,21 @@ class AnalysisRecord:
             model_version=row["model_version"],
             model_dataset=row["model_dataset"],
             created_at=_normalize_created_at(row["created_at"]),
+            idempotency_key=row["idempotency_key"],
+            request_hash=row["request_hash"],
         )
 
 
 class AnalysisRepository(Protocol):
     def create(self, record: AnalysisRecord) -> AnalysisRecord: ...
     def list_by_account(
-        self, account_id: str, *, limit: int, offset: int
+        self, account_id: str, *, limit: int, offset: int,
+        sort: HistorySort = HistorySort.newest,
     ) -> tuple[list[AnalysisRecord], int]: ...
     def get_by_account(self, analysis_id: str, account_id: str) -> AnalysisRecord | None: ...
+    def get_by_idempotency_key(
+        self, account_id: str, key: str, request_hash: str
+    ) -> AnalysisRecord | None: ...
     def ensure_schema(self) -> None: ...
     def seed_demo(self, account_id: str, model_info: ModelInfo) -> int: ...
     def close(self) -> None: ...
@@ -124,11 +138,23 @@ class SqliteAnalysisRepository:
                     model_name    TEXT NOT NULL,
                     model_version TEXT NOT NULL,
                     model_dataset TEXT NOT NULL,
-                    created_at    TEXT NOT NULL
+                    created_at    TEXT NOT NULL,
+                    idempotency_key TEXT,
+                    request_hash    TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_analyses_account_created
                     ON analyses (account_id, created_at DESC);
                 """
+            )
+            # Actualización aditiva de SQLite local: preservar el historial existente.
+            conn.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(analyses)")}
+            for column in ("idempotency_key", "request_hash"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT")
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_analyses_account_idempotency "
+                "ON analyses (account_id, idempotency_key)"
             )
 
     def create(self, record: AnalysisRecord) -> AnalysisRecord:
@@ -140,8 +166,8 @@ class SqliteAnalysisRepository:
                         INSERT INTO analyses (
                             id, account_id, category, probability, scores_json,
                             display_name, is_demo, model_name, model_version,
-                            model_dataset, created_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            model_dataset, created_at, idempotency_key, request_hash
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             record.id,
@@ -155,28 +181,39 @@ class SqliteAnalysisRepository:
                             record.model_version,
                             record.model_dataset,
                             record.created_at,
+                            record.idempotency_key,
+                            record.request_hash,
                         ),
                     )
                     break
                 except sqlite3.IntegrityError:
+                    conn.rollback()
+                    if record.idempotency_key is not None:
+                        previous = self.get_by_idempotency_key(
+                            record.account_id, record.idempotency_key, record.request_hash
+                        )
+                        if previous is not None:
+                            return previous
                     record.id = _new_id()
             else:
                 raise ApiException(500, "internal_error", "No se pudo guardar el análisis.")
             return record
 
     def list_by_account(
-        self, account_id: str, *, limit: int, offset: int
+        self, account_id: str, *, limit: int, offset: int,
+        sort: HistorySort = HistorySort.newest,
     ) -> tuple[list[AnalysisRecord], int]:
+        order = history_order_sql(sort)
         with self._connect() as conn:
             total = conn.execute(
                 "SELECT COUNT(*) FROM analyses WHERE account_id = ?",
                 (account_id,),
             ).fetchone()[0]
             rows = conn.execute(
-                """
+                f"""
                 SELECT * FROM analyses
                 WHERE account_id = ?
-                ORDER BY created_at DESC, id DESC
+                ORDER BY {order}
                 LIMIT ? OFFSET ?
                 """,
                 (account_id, limit, offset),
@@ -233,6 +270,19 @@ class SqliteAnalysisRepository:
                     ),
                 )
         return len(demo)
+
+    def get_by_idempotency_key(
+        self, account_id: str, key: str, request_hash: str
+    ) -> AnalysisRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM analyses WHERE account_id = ? AND idempotency_key = ?",
+                (account_id, key),
+            ).fetchone()
+        if row is None:
+            return None
+        require_same_request(row["request_hash"], request_hash)
+        return AnalysisRecord.from_row(row)
 
     def close(self) -> None:
         # Conexiones por operación; no hay recurso permanente que liberar.

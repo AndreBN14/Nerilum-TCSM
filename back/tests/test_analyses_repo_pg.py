@@ -1,214 +1,263 @@
-"""Pruebas del repositorio Postgres con psycopg v3.
+"""Integración PostgreSQL: solo DATABASE_URL_TEST y un esquema aleatorio por prueba.
 
-Si no hay DATABASE_URL_TEST configurada, las pruebas se omiten explícitamente.
-No se ejecutan pruebas destructivas contra producción.
+No se lee DATABASE_URL ni se borra contenido de esquemas existentes.
 """
 from __future__ import annotations
 
-import json
 import os
-import re
+import json
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from uuid import uuid4
 
+import psycopg
+from psycopg import sql
+from psycopg.conninfo import make_conninfo
 import pytest
 
 from app.core.categories import Category
 from app.core.errors import ApiException
+from app.core.history_sort import HistorySort
 from app.core.model_info import ModelInfo
 from app.services import analyses_pg
+from app.routes.analyses import _to_out, _summary_from_record
 
-CANONICAL_TS = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
-
-DATABASE_URL_TEST = os.environ.get("DATABASE_URL_TEST") or os.environ.get("DATABASE_URL")
-
-
-def _skip_if_no_pg():
-    if not DATABASE_URL_TEST:
-        pytest.skip("No hay base de datos Postgres de prueba disponible (falta DATABASE_URL_TEST/DATABASE_URL); saltando pruebas Postgres")
+ALICE = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+BOB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
 
-def _make_model_info() -> ModelInfo:
-    return ModelInfo(
-        name="yolov8n-cls",
-        version="v0.1",
-        dataset="Alzheimer MRI Dataset (Kaggle)",
-        classes=[c.value for c in Category],
-    )
+@pytest.fixture
+def repo():
+    # Lectura en la fixture: nunca hay fallback a la base de la aplicación.
+    dsn = os.environ.get("DATABASE_URL_TEST")
+    if not dsn:
+        pytest.skip("Requiere DATABASE_URL_TEST dedicada; DATABASE_URL no se usa.")
+    schema = f"nerilum_test_{uuid4().hex}"
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema)))
+        try:
+            isolated_dsn = make_conninfo(dsn, options=f"-csearch_path={schema}")
+            repository = analyses_pg.PostgresAnalysisRepository(isolated_dsn)
+            try:
+                yield repository
+            finally:
+                repository.close()
+        finally:
+            admin.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(sql.Identifier(schema)))
 
 
-def _record_pg(record_id: str = "an_fijo", account: str = "a") -> analyses_pg.AnalysisRecord:
+def _record(record_id="an_fijo", account=ALICE, created_at="2026-10-12T10:00:00Z",
+            name=None, probability=0.25):
     return analyses_pg.AnalysisRecord(
-        id=record_id,
-        account_id=account,
-        category="NonDemented",
-        probability=0.9,
-        scores={"NonDemented": 0.9},
-        model_name="yolov8n-cls",
-        model_version="v0.1",
-        model_dataset="Alzheimer MRI Dataset (Kaggle)",
+        id=record_id, account_id=account, category="NonDemented",
+        probability=probability, scores={c.value: 0.25 for c in Category},
+        display_name=name, model_name="yolov8n-cls", model_version="v0.1",
+        model_dataset="Alzheimer MRI Dataset (Kaggle)", created_at=created_at,
     )
 
 
-def _full_record_pg(record_id: str, created_at: str, account: str = "a") -> analyses_pg.AnalysisRecord:
-    return analyses_pg.AnalysisRecord(
-        id=record_id,
-        account_id=account,
-        category="NonDemented",
-        probability=0.25,
-        scores={c.value: 0.25 for c in Category},
-        model_name="yolov8n-cls",
-        model_version="v0.1",
-        model_dataset="Alzheimer MRI Dataset (Kaggle)",
-        created_at=created_at,
-    )
+def test_pg_create_get_list_basic(repo):
+    stored = repo.create(_record())
+    got = repo.get_by_account(stored.id, ALICE)
+    assert got is not None
+    assert got.account_id == ALICE
+    assert got.created_at == "2026-10-12T10:00:00Z"
 
 
-@pytest.mark.skipif(not DATABASE_URL_TEST, reason="Requiere DATABASE_URL_TEST/DATABASE_URL para Postgres")
-def test_pg_create_get_list_basic():
-    _skip_if_no_pg()
-    repo = analyses_pg.PostgresAnalysisRepository(DATABASE_URL_TEST)
-    try:
-        # limpiar registros de prueba si existen
+def test_pg_pagination_and_order_desc(repo):
+    repo.create(_record("an_a"))
+    repo.create(_record("an_b"))
+    repo.create(_record("an_c", created_at="2026-10-12T11:00:00Z"))
+    items, total = repo.list_by_account(ALICE, limit=2, offset=1)
+    assert total == 3
+    assert [item.id for item in items] == ["an_b", "an_a"]
+
+
+def test_pg_isolation_per_account(repo):
+    repo.create(_record("an_a", ALICE))
+    repo.create(_record("an_b", BOB))
+    assert repo.get_by_account("an_b", ALICE) is None
+    items, total = repo.list_by_account(ALICE, limit=50, offset=0)
+    assert total == 1
+    assert [item.id for item in items] == ["an_a"]
+
+
+def test_pg_uuid_owner_and_rls_block_direct_client_roles(repo):
+    with repo._connect() as conn:
+        table = conn.execute(
+            "SELECT relrowsecurity FROM pg_class WHERE oid = 'analyses'::regclass"
+        ).fetchone()
+        assert table["relrowsecurity"] is True
+        owner = conn.execute(
+            "SELECT atttypid::regtype::text AS type FROM pg_attribute "
+            "WHERE attrelid = 'analyses'::regclass AND attname = 'account_id'"
+        ).fetchone()
+        assert owner["type"] == "uuid"
+        probability_type = conn.execute(
+            "SELECT atttypid::regtype::text AS type FROM pg_attribute "
+            "WHERE attrelid = 'analyses'::regclass AND attname = 'probability'"
+        ).fetchone()
+        assert probability_type["type"] == "double precision"
+        for role in ("anon", "authenticated"):
+            exists = conn.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)).fetchone()
+            if exists:
+                privileges = conn.execute(
+                    "SELECT has_table_privilege(%s, 'analyses', 'SELECT') AS can_select, "
+                    "has_table_privilege(%s, 'analyses', 'INSERT') AS can_insert",
+                    (role, role),
+                ).fetchone()
+                assert privileges == {"can_select": False, "can_insert": False}
+
+
+def test_pg_seed_demo_idempotent(repo):
+    model = ModelInfo(name="yolov8n-cls", version="v0.1", dataset="Kaggle",
+                      classes=[c.value for c in Category])
+    assert repo.seed_demo(ALICE, model) == 4
+    assert repo.seed_demo(ALICE, model) == 0
+    items, total = repo.list_by_account(ALICE, limit=100, offset=0)
+    assert total == 4
+    assert all(item.is_demo for item in items)
+
+
+def test_pg_create_raises_internal_error_on_id_collision(repo, monkeypatch):
+    monkeypatch.setattr(analyses_pg, "_new_id", lambda: "an_fijo")
+    repo.create(_record())
+    with pytest.raises(ApiException) as exc:
+        repo.create(_record())
+    assert exc.value.code == "internal_error"
+
+
+@pytest.mark.parametrize("sort,expected", [
+    (HistorySort.newest, ["an_d", "an_b", "an_a", "an_c"]),
+    (HistorySort.oldest, ["an_c", "an_a", "an_b", "an_d"]),
+    (HistorySort.name_az, ["an_b", "an_c", "an_a", "an_d"]),
+    (HistorySort.probability, ["an_b", "an_c", "an_a", "an_d"]),
+])
+def test_pg_orders_before_pagination(repo, sort, expected):
+    repo.create(_record("an_a", name="Zeta", probability=0.5))
+    repo.create(_record("an_b", name="alfa", probability=0.9,
+                        created_at="2026-10-12T11:00:00Z"))
+    repo.create(_record("an_c", name="Alfa", probability=0.9,
+                        created_at="2026-10-12T09:00:00Z"))
+    repo.create(_record("an_d", name=None, probability=0.1,
+                        created_at="2026-10-12T12:00:00Z"))
+    items, total = repo.list_by_account(ALICE, limit=2, offset=1, sort=sort)
+    assert total == 4
+    assert [item.id for item in items] == expected[1:3]
+
+
+@pytest.mark.parametrize("probability", [0.9274, 0.84, 0.9, 0.333333, 0.999999])
+def test_pg_probability_matches_json_after_reading(repo, probability):
+    record = _record(probability=probability)
+    record.scores = {
+        category.value: probability if category.value == record.category
+        else (1 - probability) / 3
+        for category in Category
+    }
+    original = _to_out(record).model_dump(mode="json")
+    repo.create(record)
+    detail = repo.get_by_account(record.id, ALICE)
+    items, total = repo.list_by_account(ALICE, limit=10, offset=0)
+
+    assert detail is not None
+    assert total == 1
+    for loaded in (detail, items[0]):
+        assert loaded.probability == probability
+        assert loaded.probability == loaded.scores[loaded.category]
+    assert _to_out(detail).model_dump(mode="json") == original
+    summary = _summary_from_record(items[0]).model_dump(mode="json")
+    assert summary["probability"] == summary["scores"][summary["category"]]
+
+
+def _precision_migration():
+    path = Path(__file__).resolve().parents[1] / "migrations" / "003_align_probability_precision.sql"
+    return path.read_text(encoding="utf-8")
+
+
+def test_pg_migration_recovers_legacy_precision_from_scores(repo):
+    record = _record(probability=0.9274)
+    record.scores = {
+        c.value: record.probability if c.value == record.category
+        else (1 - record.probability) / 3 for c in Category
+    }
+    repo.create(record)
+    with repo._connect() as conn:
+        conn.execute("ALTER TABLE analyses ALTER COLUMN probability TYPE REAL")
+    legacy = repo.get_by_account(record.id, ALICE)
+    assert legacy.probability != legacy.scores[legacy.category]
+
+    with repo._connect() as conn:
+        conn.autocommit = True
+        conn.execute(_precision_migration())
+    restored = repo.get_by_account(record.id, ALICE)
+    assert restored.probability == restored.scores[restored.category] == 0.9274
+    # La migración es repetible sin alterar nombres, fechas ni scores.
+    with repo._connect() as conn:
+        conn.autocommit = True
+        conn.execute(_precision_migration())
+    assert repo.get_by_account(record.id, ALICE) == restored
+
+
+def test_pg_migration_aborts_without_changing_invalid_legacy_rows(repo):
+    repo.create(_record(probability=0.9274))
+    with repo._connect() as conn:
+        conn.execute("ALTER TABLE analyses ALTER COLUMN probability TYPE REAL")
+        conn.execute("UPDATE analyses SET scores_json = %s", (json.dumps({}),))
+    before = repo.get_by_account("an_fijo", ALICE)
+
+    with pytest.raises(psycopg.Error):
         with repo._connect() as conn:
-            conn.execute("DELETE FROM analyses WHERE account_id IN ('a','b','pgtest')")
-            conn.commit()
-        stored = repo.create(_record_pg(account="a"))
-        assert CANONICAL_TS.match(stored.created_at)
-        got = repo.get_by_account("an_fijo", "a")
-        assert got is not None
-        assert got.id == "an_fijo"
-        assert got.account_id == "a"
-    finally:
-        try:
-            with repo._connect() as conn:
-                conn.execute("DELETE FROM analyses WHERE account_id IN ('a','b','pgtest')")
-                conn.commit()
-        except Exception:
-            pass
-        repo.close()
+            conn.autocommit = True
+            conn.execute(_precision_migration())
+
+    assert repo.get_by_account("an_fijo", ALICE) == before
+    with repo._connect() as conn:
+        column = conn.execute(
+            "SELECT atttypid::regtype::text AS type FROM pg_attribute "
+            "WHERE attrelid = 'analyses'::regclass AND attname = 'probability'"
+        ).fetchone()
+        assert column["type"] == "real"
 
 
-@pytest.mark.skipif(not DATABASE_URL_TEST, reason="Requiere DATABASE_URL_TEST/DATABASE_URL para Postgres")
-def test_pg_pagination_and_order_desc():
-    _skip_if_no_pg()
-    repo = analyses_pg.PostgresAnalysisRepository(DATABASE_URL_TEST)
-    try:
-        with repo._connect() as conn:
-            conn.execute("DELETE FROM analyses WHERE account_id='a'")
-            conn.commit()
-        repo.create(_full_record_pg("an_a", "2026-10-12T10:00:00Z", "a"))
-        repo.create(_full_record_pg("an_b", "2026-10-12T10:00:00Z", "a"))
-        repo.create(_full_record_pg("an_c", "2026-10-12T11:00:00Z", "a"))
-        items, total = repo.list_by_account("a", limit=10, offset=0)
-        assert total == 3
-        assert [i.id for i in items] == ["an_c", "an_b", "an_a"]
-    finally:
-        try:
-            with repo._connect() as conn:
-                conn.execute("DELETE FROM analyses WHERE account_id='a'")
-                conn.commit()
-        except Exception:
-            pass
-        repo.close()
+def _keyed_record(record_id, account=ALICE, request_hash="a" * 64):
+    record = _record(record_id, account)
+    record.idempotency_key = "operation-1"
+    record.request_hash = request_hash
+    return record
 
 
-@pytest.mark.skipif(not DATABASE_URL_TEST, reason="Requiere DATABASE_URL_TEST/DATABASE_URL para Postgres")
-def test_pg_isolation_per_account():
-    _skip_if_no_pg()
-    repo = analyses_pg.PostgresAnalysisRepository(DATABASE_URL_TEST)
-    try:
-        with repo._connect() as conn:
-            conn.execute("DELETE FROM analyses WHERE account_id IN ('a','b')")
-            conn.commit()
-        repo.create(_record_pg("an_a1", "a"))
-        repo.create(_record_pg("an_b1", "b"))
-        got_a = repo.get_by_account("an_b1", "a")
-        assert got_a is None
-        got_b = repo.get_by_account("an_b1", "b")
-        assert got_b is not None
-        items_b, total_b = repo.list_by_account("b", limit=50, offset=0)
-        assert total_b == 1
-        items_a, total_a = repo.list_by_account("a", limit=50, offset=0)
-        assert total_a == 1
-    finally:
-        try:
-            with repo._connect() as conn:
-                conn.execute("DELETE FROM analyses WHERE account_id IN ('a','b')")
-                conn.commit()
-        except Exception:
-            pass
-        repo.close()
+def test_pg_idempotent_create_replay_and_conflict(repo):
+    first = repo.create(_keyed_record("an_first"))
+    repeated = repo.create(_keyed_record("an_second"))
+    assert repeated == first
+    assert repo.get_by_idempotency_key(ALICE, "operation-1", "a" * 64) == first
+    with pytest.raises(ApiException) as exc:
+        repo.create(_keyed_record("an_third", request_hash="b" * 64))
+    assert exc.value.code == "idempotency_conflict"
+    assert repo.list_by_account(ALICE, limit=10, offset=0)[1] == 1
+    assert repo.create(_keyed_record("an_bob", account=BOB)).id == "an_bob"
 
 
-@pytest.mark.skipif(not DATABASE_URL_TEST, reason="Requiere DATABASE_URL_TEST/DATABASE_URL para Postgres")
-def test_pg_scores_and_created_at_canonical():
-    _skip_if_no_pg()
-    repo = analyses_pg.PostgresAnalysisRepository(DATABASE_URL_TEST)
-    try:
-        with repo._connect() as conn:
-            conn.execute("DELETE FROM analyses WHERE account_id='a'")
-            conn.commit()
-        repo.create(_record_pg("an_s", "a"))
-        got = repo.get_by_account("an_s", "a")
-        assert got is not None
-        assert CANONICAL_TS.match(got.created_at)
-        assert "NonDemented" in got.scores
-    finally:
-        try:
-            with repo._connect() as conn:
-                conn.execute("DELETE FROM analyses WHERE account_id='a'")
-                conn.commit()
-        except Exception:
-            pass
-        repo.close()
+def test_pg_concurrent_key_is_unique(repo):
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        records = list(executor.map(
+            lambda n: repo.create(_keyed_record(f"an_{n}")), range(4)))
+    assert len({record.id for record in records}) == 1
+    assert repo.list_by_account(ALICE, limit=10, offset=0)[1] == 1
 
 
-@pytest.mark.skipif(not DATABASE_URL_TEST, reason="Requiere DATABASE_URL_TEST/DATABASE_URL para Postgres")
-def test_pg_seed_demo_idempotent_and_fields():
-    _skip_if_no_pg()
-    repo = analyses_pg.PostgresAnalysisRepository(DATABASE_URL_TEST)
-    try:
-        acc = "pgtest"
-        with repo._connect() as conn:
-            conn.execute("DELETE FROM analyses WHERE account_id=%s", (acc,))
-            conn.commit()
-        mi = _make_model_info()
-        n1 = repo.seed_demo(acc, mi)
-        n2 = repo.seed_demo(acc, mi)
-        assert n1 == 4
-        assert n2 == 0
-        items, total = repo.list_by_account(acc, limit=100, offset=0)
-        assert total == 4
-        assert all(i.is_demo for i in items)
-        assert all(i.model_dataset == mi.dataset for i in items)
-    finally:
-        try:
-            with repo._connect() as conn:
-                conn.execute("DELETE FROM analyses WHERE account_id='pgtest'")
-                conn.commit()
-        except Exception:
-            pass
-        repo.close()
-
-
-@pytest.mark.skipif(not DATABASE_URL_TEST, reason="Requiere DATABASE_URL_TEST/DATABASE_URL para Postgres")
-def test_pg_create_raises_internal_error_on_id_collision(monkeypatch):
-    _skip_if_no_pg()
-    repo = analyses_pg.PostgresAnalysisRepository(DATABASE_URL_TEST)
-    try:
-        with repo._connect() as conn:
-            conn.execute("DELETE FROM analyses WHERE account_id='a'")
-            conn.commit()
-        monkeypatch.setattr(analyses_pg, "_new_id", lambda: "an_fijo")
-        repo.create(_record_pg("an_fijo", "a"))
-        with pytest.raises(ApiException) as exc:
-            repo.create(_record_pg("an_fijo", "a"))
-        assert exc.value.status_code == 500
-        assert exc.value.code == "internal_error"
-    finally:
-        try:
-            with repo._connect() as conn:
-                conn.execute("DELETE FROM analyses WHERE account_id='a'")
-                conn.commit()
-        except Exception:
-            pass
-        repo.close()
+def test_pg_idempotency_migration_preserves_existing_history(repo):
+    record = repo.create(_record())
+    with repo._connect() as conn:
+        conn.execute("ALTER TABLE analyses DROP COLUMN idempotency_key")
+        conn.execute("ALTER TABLE analyses DROP COLUMN request_hash")
+    migration = Path(__file__).resolve().parents[1] / "migrations" / "004_analysis_idempotency.sql"
+    with repo._connect() as conn:
+        conn.autocommit = True
+        conn.execute(migration.read_text(encoding="utf-8"))
+    assert repo.get_by_account(record.id, ALICE) == record
+    # Una segunda aplicación no elimina datos ni crea restricciones duplicadas.
+    with repo._connect() as conn:
+        conn.autocommit = True
+        conn.execute(migration.read_text(encoding="utf-8"))
+    assert repo.get_by_account(record.id, ALICE) == record

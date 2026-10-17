@@ -65,6 +65,12 @@ Para pruebas (usa claves EC y JWKS simulados, sin red ni Supabase real):
 .\.venv\Scripts\python.exe -m pytest
 ```
 
+Las pruebas PostgreSQL solo se habilitan con `DATABASE_URL_TEST` apuntando a una
+base dedicada. **Nunca usan `DATABASE_URL` como alternativa.** Cada prueba crea
+un esquema `nerilum_test_<UUID>`, dirige sus conexiones a ese esquema y lo elimina
+al terminar; no borra filas de tablas preexistentes. El usuario de pruebas necesita
+permiso para crear y eliminar esos esquemas. Sin esa variable se omiten las pruebas.
+
 ## Endpoints
 
 | Método | Ruta | Auth | Descripción |
@@ -80,6 +86,38 @@ opcional `display_name` (se recorta; vacío queda en `null`; ≤120 caracteres y
 recortados; sin caracteres de control). Errores: `415` formato no admitido,
 `400` imagen corrupta, `413` exceso de tamaño, `422` `display_name` inválido,
 `503` modelo no disponible.
+
+### Reintentos sin duplicar historial
+
+El cliente puede enviar `Idempotency-Key` (1–128 caracteres de `A-Z`, `a-z`,
+`0-9`, `.`, `_`, `:` o `-`). Usar una clave nueva, por ejemplo UUID, para cada
+operación y conservarla al reintentar por timeout o pérdida de conexión.
+
+```http
+POST /api/v1/analyses
+Authorization: Bearer <access_token>
+Idempotency-Key: 397a164e-50ab-48a4-a0d8-5c0b1dfcd845
+Content-Type: multipart/form-data; boundary=...
+```
+
+- Mismo usuario, clave, bytes y nombre normalizado: devuelve el resultado original
+  con `201`, mismo ID y fecha, sin guardar otra fila. Se puede recuperar aunque
+  el modelo ahora no esté disponible.
+- Misma clave y usuario, pero distintos bytes o nombre: `409 idempotency_conflict`.
+- Otro usuario puede utilizar la misma clave sin acceder al resultado ajeno.
+- Dos solicitudes simultáneas pueden ejecutar inferencia; la restricción única
+  `(account_id, idempotency_key)` garantiza un único registro persistido. El segundo
+  INSERT recupera el resultado ganador o responde conflicto si el contenido difiere.
+- Un error previo al guardado no reserva la clave: se puede reintentar.
+- No hay caducidad mientras se conserve el registro. La clave y la huella SHA-256
+  de la solicitud son internas; no se devuelven en las respuestas ni se registran
+  en logs. Se conserva la huella, no los bytes de imagen.
+- El nombre se compara después de recortar espacios y convertir vacío a null;
+  el nombre del archivo, el boundary multipart y la versión actual del modelo
+  no forman parte de la huella de la operación.
+- El encabezado es opcional para compatibilidad. **Sin clave, cada POST es un
+  análisis nuevo y no hay garantía contra duplicados por reintentos.** El adaptador
+  HTTP futuro de Flutter deberá generar/conservar la clave por operación.
 
 Respuesta de `/api/v1/health` (público):
 
@@ -115,12 +153,57 @@ Respuesta de `POST /api/v1/analyses` (201):
 
 `probability` es la del `category` (argmax); `scores` incluye las cuatro clases
 como propiedades en PascalCase (`NonDemented`, `VeryMildDemented`, `MildDemented`,
-`ModerateDemented`), derivadas del enum `Category`. `created_at` es ISO-8601 UTC
+`ModerateDemented`), derivadas del enum `Category`.
+Antes de guardar, `AnalysisPrediction` exige exactamente esas clases y valores
+numéricos finitos en `[0,1]`, con suma uno dentro de una tolerancia absoluta de
+`1e-5`. La categoría debe tener la puntuación máxima y su probabilidad debe
+coincidir con la correspondiente en `scores`. Se valida antes y después del
+redondeo a seis decimales; no se normalizan ni reparan salidas inválidas.
+También se valida el registro de respuesta completo antes del INSERT.
+Una distribución inválida devuelve `503 model_unavailable` sin guardar análisis.
+Estas puntuaciones no equivalen a probabilidades clínicas calibradas.
+`created_at` es ISO-8601 UTC
 con segundos (`YYYY-MM-DDTHH:MM:SSZ`). `GET /api/v1/analyses` acepta
-`limit` (1-100, por defecto 50) y `offset` (0 por
-defecto). Un análisis ajeno o inexistente responde `404 not_found`.
+`limit` (1-100, por defecto 50), `offset` (0 por defecto) y `sort`:
+`newest` (predeterminado), `oldest`, `nameAZ` o `probability`.
+El orden se aplica en SQL **antes de paginar**, solo sobre registros propios;
+nombres nulos quedan al final, A-Z ignora mayúsculas, probabilidad es descendente
+y los empates usan fecha e ID para mantener páginas estables.
+Un análisis ajeno o inexistente responde `404 not_found`.
+
+La validación de imagen, inferencia y escritura del resultado se ejecutan en
+threadpool para mantener disponible el event loop durante las operaciones síncronas.
 
 ## Persistencia y modelo
+
+- **PostgreSQL** se selecciona al definir `DATABASE_URL`. Las nuevas tablas usan
+  `account_id UUID` y `probability DOUBLE PRECISION` (64 bits, como los floats de
+  Python y los valores que se recuperan del JSON), RLS habilitado y acceso revocado a PUBLIC, `anon` y
+  `authenticated`. El acceso a resultados es exclusivo de FastAPI: no hay políticas
+  ni grants que permitan insertar o leer resultados directamente con la clave pública.
+  La conexión SQL del backend requiere un rol propietario de la tabla o autorizado
+  con BYPASSRLS y permisos de tabla; esas credenciales solo pertenecen al servidor.
+  FastAPI debe seguir filtrando por el UUID verificado del JWT en todas sus consultas.
+- El repositorio utiliza `migrations/001_create_analyses.sql` como fuente única para
+  crear/proteger el esquema. Si una instalación antigua tiene `account_id TEXT`,
+  aplicar explícitamente `migrations/002_secure_existing_analyses.sql` antes de arrancar.
+  La conversión se realiza en transacción y aborta si hay propietarios no UUID;
+  no se descartan registros inválidos. Revisar esos datos antes de reintentar.
+  Para tablas antiguas con `probability REAL`, aplicar también
+  `migrations/003_align_probability_precision.sql`. Esta migración cambia a
+  DOUBLE PRECISION y recupera el valor de `scores_json[category]`: convertir
+  únicamente el tipo no recuperaría la precisión perdida. Si el JSON no es válido,
+  falta la categoría o su valor no es numérico/finito dentro de `[0,1]`, la
+  transacción aborta sin modificar registros. Ejecutarla en una ventana de
+  mantenimiento: bloquea temporalmente la tabla para realizar la conversión.
+  El backend exige esta migración si detecta el tipo REAL al iniciar; no la
+  ejecuta automáticamente. En instalaciones nuevas, `001` ya usa el tipo correcto.
+  Aplicar también `migrations/004_analysis_idempotency.sql` para añadir las columnas
+  internas y la restricción única a tablas anteriores. Es aditiva y no elimina
+  resultados. El backend exige ese esquema antes de aceptar solicitudes.
+  SQLite añade automáticamente estas columnas e índice en una transacción local.
+  Copias de los scripts: `infraestructura/BD/supabase/` desde la raíz del repo.
+  No se han aplicado estas migraciones a ninguna base remota durante la corrección.
 
 - **SQLite** local en `data/nerilum.db` (tabla `analyses`, índice por
   `account_id` + `created_at DESC`). No se almacenan imágenes. El historial
@@ -187,6 +270,7 @@ proceso tienen prioridad.
 | `RETRY_AFTER_SECONDS` | `5` | Segundos del header `Retry-After` en las respuestas `503`. |
 | `CORS_ORIGINS` | `[]` | Lista JSON de orígenes web permitidos. |
 | `DATABASE_PATH` | `back/data/nerilum.db` | Ubicación del SQLite local. |
+| `DATABASE_URL` | vacío | DSN PostgreSQL exclusivo del backend; si está vacío se usa SQLite. |
 | `MODEL_DIR` | vacío | Carpeta con un único `*.onnx` y su `model_card.json`. |
 | `MODEL_INPUT_SIZE` | vacío | Tamaño de entrada; si falta, el declarado en ONNX. |
 | `MODEL_RESIZE_MODE` | `center_crop` | `letterbox`, `center_crop` o `stretch`. Por defecto el pipeline de referencia de Ultralytics. |

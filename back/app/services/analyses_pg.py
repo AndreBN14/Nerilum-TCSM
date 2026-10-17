@@ -1,22 +1,21 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from datetime import datetime, timezone
-from typing import Protocol
+from pathlib import Path
+from uuid import UUID
 
 import psycopg
 from psycopg import errors as pg_errors
 
 from app.core.errors import ApiException
+from app.core.history_sort import HistorySort, history_order_sql
+from app.core.idempotency import require_same_request
 from app.core.model_info import ModelInfo
 from app.services.analyses import (
     AnalysisRecord,
-    AnalysisRepository,
     DemoRecord,
-    ModelInfo,
     _demo_scores,
-    _format_utc,
     _new_id,
     _normalize_created_at,
     _now_iso,
@@ -39,7 +38,7 @@ def _pg_normalize_created_at(value) -> str:
     return str(value)
 
 
-class PostgresAnalysisRepository(AnalysisRepository, Protocol):
+class PostgresAnalysisRepository:
     """Repositorio Postgres con psycopg v3 sincrónico."""
 
     def __init__(self, database_url: str) -> None:
@@ -54,26 +53,37 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
 
     def ensure_schema(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS analyses (
-                    id            TEXT PRIMARY KEY,
-                    account_id    TEXT NOT NULL,
-                    category      TEXT NOT NULL,
-                    probability   REAL NOT NULL,
-                    scores_json   TEXT NOT NULL,
-                    display_name  TEXT,
-                    is_demo       BOOLEAN NOT NULL DEFAULT FALSE,
-                    model_name    TEXT NOT NULL,
-                    model_version TEXT NOT NULL,
-                    model_dataset TEXT NOT NULL,
-                    created_at    TIMESTAMPTZ NOT NULL
+            migration = Path(__file__).resolve().parents[2] / "migrations" / "001_create_analyses.sql"
+            conn.execute(migration.read_text(encoding="utf-8"))
+            owner_type = conn.execute(
+                "SELECT atttypid::regtype::text AS type FROM pg_attribute "
+                "WHERE attrelid = 'analyses'::regclass AND attname = 'account_id'"
+            ).fetchone()
+            if owner_type["type"] != "uuid":
+                # Guardar los permisos antes de exigir la migración de tipo.
+                conn.commit()
+                raise RuntimeError("Ejecuta migrations/002_secure_existing_analyses.sql para convertir account_id a UUID.")
+            probability_type = conn.execute(
+                "SELECT atttypid::regtype::text AS type FROM pg_attribute "
+                "WHERE attrelid = 'analyses'::regclass AND attname = 'probability'"
+            ).fetchone()
+            if probability_type["type"] != "double precision":
+                conn.commit()
+                raise RuntimeError(
+                    "Ejecuta migrations/003_align_probability_precision.sql para "
+                    "actualizar probability y recuperar su valor desde scores_json."
                 )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_analyses_account_created ON analyses (account_id, created_at DESC)"
-            )
+            idempotency_schema = conn.execute(
+                "SELECT (SELECT COUNT(*) FROM pg_attribute "
+                "WHERE attrelid = 'analyses'::regclass AND NOT attisdropped "
+                "AND attname IN ('idempotency_key', 'request_hash')) = 2 "
+                "AND EXISTS (SELECT 1 FROM pg_constraint "
+                "WHERE conrelid = 'analyses'::regclass AND contype = 'u' "
+                "AND conname = 'analyses_account_idempotency_key') AS ready"
+            ).fetchone()
+            if not idempotency_schema["ready"]:
+                conn.commit()
+                raise RuntimeError("Ejecuta migrations/004_analysis_idempotency.sql antes de arrancar.")
             conn.commit()
 
     def create(self, record: AnalysisRecord) -> AnalysisRecord:
@@ -85,12 +95,12 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
                         INSERT INTO analyses (
                             id, account_id, category, probability, scores_json,
                             display_name, is_demo, model_name, model_version,
-                            model_dataset, created_at
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            model_dataset, created_at, idempotency_key, request_hash
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             record.id,
-                            record.account_id,
+                            UUID(record.account_id),
                             record.category,
                             record.probability,
                             json.dumps(record.scores),
@@ -100,40 +110,50 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
                             record.model_version,
                             record.model_dataset,
                             record.created_at,
+                            record.idempotency_key,
+                            record.request_hash,
                         ),
                     )
                     conn.commit()
                     break
-                except (pg_errors.UniqueViolation, sqlite3.IntegrityError, pg_errors.IntegrityError):
-                    record.id = _new_id()
+                except pg_errors.UniqueViolation:
                     conn.rollback()
+                    if record.idempotency_key is not None:
+                        previous = self.get_by_idempotency_key(
+                            record.account_id, record.idempotency_key, record.request_hash
+                        )
+                        if previous is not None:
+                            return previous
+                    record.id = _new_id()
             else:
                 raise ApiException(500, "internal_error", "No se pudo guardar el análisis.")
             return record
 
     def list_by_account(
-        self, account_id: str, *, limit: int, offset: int
+        self, account_id: str, *, limit: int, offset: int,
+        sort: HistorySort = HistorySort.newest,
     ) -> tuple[list[AnalysisRecord], int]:
+        order = history_order_sql(sort)
         with self._connect() as conn:
             total_row = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM analyses WHERE account_id = %s",
-                (account_id,),
+                (UUID(account_id),),
             ).fetchone()
             total = int(total_row["cnt"]) if total_row else 0
             rows = conn.execute(
-                """
+                f"""
                 SELECT * FROM analyses
                 WHERE account_id = %s
-                ORDER BY created_at DESC, id DESC
+                ORDER BY {order}
                 LIMIT %s OFFSET %s
                 """,
-                (account_id, limit, offset),
+                (UUID(account_id), limit, offset),
             ).fetchall()
             items = []
             for r in rows:
                 item = AnalysisRecord(
                     id=r["id"],
-                    account_id=r["account_id"],
+                    account_id=str(r["account_id"]),
                     category=r["category"],
                     probability=float(r["probability"]),
                     scores=json.loads(r["scores_json"]) if isinstance(r["scores_json"], str) else r["scores_json"],
@@ -143,6 +163,8 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
                     model_version=r["model_version"],
                     model_dataset=r["model_dataset"],
                     created_at=_pg_normalize_created_at(r["created_at"]),
+                    idempotency_key=r["idempotency_key"],
+                    request_hash=r["request_hash"],
                 )
                 items.append(item)
             return items, int(total)
@@ -154,13 +176,13 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
                 SELECT * FROM analyses
                 WHERE id = %s AND account_id = %s
                 """,
-                (analysis_id, account_id),
+                (analysis_id, UUID(account_id)),
             ).fetchone()
         if row is None:
             return None
         return AnalysisRecord(
             id=row["id"],
-            account_id=row["account_id"],
+            account_id=str(row["account_id"]),
             category=row["category"],
             probability=float(row["probability"]),
             scores=json.loads(row["scores_json"]) if isinstance(row["scores_json"], str) else row["scores_json"],
@@ -170,7 +192,23 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
             model_version=row["model_version"],
             model_dataset=row["model_dataset"],
             created_at=_pg_normalize_created_at(row["created_at"]),
+            idempotency_key=row["idempotency_key"],
+            request_hash=row["request_hash"],
         )
+
+    def get_by_idempotency_key(
+        self, account_id: str, key: str, request_hash: str
+    ) -> AnalysisRecord | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, request_hash FROM analyses "
+                "WHERE account_id = %s AND idempotency_key = %s",
+                (UUID(account_id), key),
+            ).fetchone()
+        if row is None:
+            return None
+        require_same_request(row["request_hash"], request_hash)
+        return self.get_by_account(row["id"], account_id)
 
     def seed_demo(self, account_id: str, model_info: ModelInfo) -> int:
         demo: list[DemoRecord] = [
@@ -182,7 +220,7 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
         with self._connect() as conn:
             existing_row = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM analyses WHERE account_id = %s AND is_demo = TRUE",
-                (account_id,),
+                (UUID(account_id),),
             ).fetchone()
             existing = int(existing_row["cnt"]) if existing_row else 0
             if existing:
@@ -200,7 +238,7 @@ class PostgresAnalysisRepository(AnalysisRepository, Protocol):
                     """,
                     (
                         _new_id(),
-                        account_id,
+                        UUID(account_id),
                         category,
                         probability,
                         json.dumps(scores),

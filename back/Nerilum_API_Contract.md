@@ -133,14 +133,39 @@ Errores: 401 `invalid_token` (el frontend cae a bienvenida).
 - La imagen no se guarda. No se leen ni persisten datos EXIF/metadatos de la imagen.
 - Errores: 400, 401, 413, 415, 500, 503.
 
-### 5. GET /analyses?limit=50&offset=0
+### 5. GET /analyses?limit=50&offset=0&sort=newest
 
 Solo registros de la cuenta autenticada.
+
+`sort` admite `newest`, `oldest`, `nameAZ` y `probability`. Se ordena en la base de
+datos antes de aplicar `limit`/`offset`; valores desconocidos responden 422.
+Nombre A-Z ignora mayúsculas y coloca nulos al final; probabilidad es descendente.
+Los empates se resuelven por fecha e ID. El orden predeterminado sigue siendo
+`created_at DESC, id DESC`.
 
 ```json
 { "items": [ { "...mismo objeto que POST /analyses..." } ], "total": 12, "limit": 50, "offset": 0 }
 ```
 Funciona aunque el modelo esté caído.
+
+### Idempotencia de POST /analyses
+
+Encabezado opcional `Idempotency-Key`: de 1 a 128 caracteres alfanuméricos o
+`._:-`. Nueva clave por operación, misma clave para reintentar. La identidad viene
+del JWT; la unicidad se aplica a `(account_id, idempotency_key)`.
+
+- Misma clave y usuario con los mismos bytes de imagen y nombre normalizado:
+  `201` con el mismo resultado, ID y fecha. El replay no depende del modelo actual.
+- Misma clave y usuario con otro contenido: `409 idempotency_conflict`.
+- Sin clave se mantiene el comportamiento anterior: cada POST crea un registro.
+- Fallos antes del INSERT no consumen la clave. Solicitudes concurrentes pueden
+  inferir en paralelo, pero solo una persiste; la otra recupera esa fila o responde
+  conflicto. Las claves se conservan mientras exista el registro.
+
+`idempotency_key` y `request_hash` (SHA-256 de la solicitud) son columnas internas
+no incluidas en `AnalysisOut`/`AnalysisSummary`. La huella no guarda la imagen y no
+se registra en logs. La migración aditiva para instalaciones existentes es
+`back/migrations/004_analysis_idempotency.sql`.
 
 ### 6. GET /analyses/{id}
 
@@ -193,26 +218,31 @@ cambia: mismas rutas, mismos DTO (`AnalysisOut` / `AnalysisSummary` /
 
 Índice: `(account_id, created_at DESC, id DESC)` (mismo orden que `GET /analyses`).
 
+La columna `probability` utiliza 64 bits para conservar el mismo valor numérico que
+`scores_json[category]` tras el guardado y lectura. Las instalaciones con el tipo
+anterior REAL deben ejecutar `back/migrations/003_align_probability_precision.sql`:
+convierte el tipo y restaura las puntuaciones desde el JSON, sin deducirlas a partir
+del float32 degradado. Un registro no recuperable hace que la transacción aborte.
+
 ### RLS (Row Level Security)
 
-`analyses` es de solo lectura/inserción para el usuario: la API v1 no actualiza ni
-borra filas.
+`analyses` solo se consulta/inserta desde FastAPI con una conexión SQL del servidor.
+La Data API de Supabase no concede acceso directo a `anon` ni `authenticated`:
+el cliente no puede insertar puntuaciones arbitrarias mediante la clave pública.
+La API v1 no actualiza ni borra filas.
 
 ```sql
 alter table public.analyses enable row level security;
-revoke all on public.analyses from anon, authenticated;
-grant select, insert on public.analyses to authenticated;
-create policy analyses_select_own on public.analyses
-  for select to authenticated
-  using ((select auth.uid()) = account_id);
-create policy analyses_insert_own on public.analyses
-  for insert to authenticated
-  with check ((select auth.uid()) = account_id);
+revoke all on public.analyses from public, anon, authenticated;
 ```
 
 - El backend escribe con el `account_id` derivado del `sub` del JWT verificado (ES256 vía JWKS). No acepta `account_id` ni identidad por parámetro, formulario o query.
-- El `service_role` del backend omite RLS; por eso la validación de `sub` en `app/core/security.py` es obligatoria y no se delega al cliente.
+- La conexión PostgreSQL del backend debe tener permisos de tabla y ser su propietario
+  o tener BYPASSRLS; el filtrado por propietario en FastAPI sigue siendo obligatorio.
+  No se usa una clave publicable como credencial de conexión SQL.
 - `GET /analyses/{id}` de otra cuenta responde `404 not_found` (no `403`): no se revela la existencia de recursos ajenos.
+- Aplicar `back/migrations/002_secure_existing_analyses.sql` a instalaciones antiguas
+  con `account_id TEXT`; el script convierte a UUID sin eliminar registros.
 
 ### Qué se guarda y qué NO
 

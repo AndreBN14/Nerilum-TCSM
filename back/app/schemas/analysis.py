@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 
 from app.core.categories import Category
 from app.services.inference import DISCLAIMER
@@ -32,6 +32,7 @@ def _validate_iso_timestamp(value: str) -> str:
 
 
 IsoTimestamp = Annotated[str, AfterValidator(_validate_iso_timestamp)]
+Probability = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False, strict=True)]
 
 
 class ModelMetadata(BaseModel):
@@ -52,10 +53,10 @@ class Scores(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    NonDemented: float
-    VeryMildDemented: float
-    MildDemented: float
-    ModerateDemented: float
+    NonDemented: Probability
+    VeryMildDemented: Probability
+    MildDemented: Probability
+    ModerateDemented: Probability
 
 
 class AnalysisOut(BaseModel):
@@ -63,7 +64,7 @@ class AnalysisOut(BaseModel):
     category: Category
     created_at: IsoTimestamp
     display_name: str | None = None
-    probability: float
+    probability: Probability
     scores: Scores
     is_demo: bool = False
     model: ModelMetadata
@@ -75,7 +76,7 @@ class AnalysisSummary(BaseModel):
     category: Category
     created_at: IsoTimestamp
     display_name: str | None = None
-    probability: float
+    probability: Probability
     scores: Scores
     is_demo: bool = False
     model_name: str
