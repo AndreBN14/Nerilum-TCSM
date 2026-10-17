@@ -75,6 +75,36 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _parse_release_url(url: str) -> tuple[str, str, str, str]:
+    """Extrae ``(owner, repo, tag, filename)`` de una URL de asset de Release.
+
+    Formatos admitidos:
+
+    1. ``/OWNER/REPO/releases/latest/download/FILE``  (tag ``"latest"``)
+    2. ``/OWNER/REPO/releases/download/TAG/FILE``     (tag fijo)
+
+    Cualquier otra forma lanza ``ValueError``.
+    """
+
+    parts = urllib.parse.urlparse(url).path.strip("/").split("/")
+    if len(parts) < 6 or parts[2] != "releases":
+        raise ValueError(f"URL de Release no reconocida: {url}")
+
+    owner, repo = parts[0], parts[1]
+    if parts[3] == "latest" and parts[4] == "download":
+        tag = "latest"
+        filename_parts = parts[5:]
+    elif parts[3] == "download":
+        tag = parts[4]
+        filename_parts = parts[5:]
+    else:
+        raise ValueError(f"URL de Release no reconocida: {url}")
+
+    if not filename_parts:
+        raise ValueError(f"URL de Release no reconocida: {url}")
+    return owner, repo, tag, "/".join(filename_parts)
+
+
 class _AuthRedirectHandler(urllib.request.HTTPRedirectHandler):
     """Elimina ``Authorization`` al redirigir a otro host.
 
@@ -97,22 +127,11 @@ def _download_stream(url: str):
     """Descarga un asset de GitHub Release mediante la API REST."""
 
     token = os.environ.get("MODEL_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    owner, repo, tag, filename = _parse_release_url(url)
 
     if not token:
         # Sin token, intenta la URL directa (por ejemplo, si es pública).
         return urllib.request.urlopen(url)
-
-    parsed = urllib.parse.urlparse(url)
-    parts = parsed.path.strip("/").split("/")
-
-    # Formato esperado:
-    # /OWNER/REPO/releases/download/TAG/FILE.onnx
-    if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
-        raise ValueError(f"URL de Release no reconocida: {url}")
-
-    owner, repo = parts[0], parts[1]
-    tag = parts[4]
-    filename = "/".join(parts[5:])
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -121,15 +140,23 @@ def _download_stream(url: str):
         "User-Agent": "Nerilum-TCSM",
     }
 
-    # 1. Consultar el Release por etiqueta.
-    release_url = (
-        f"https://api.github.com/repos/{owner}/{repo}"
-        f"/releases/tags/{urllib.parse.quote(tag, safe='')}"
-    )
+    # El opener retira el ``Authorization`` si GitHub redirige a otro host.
+    opener = urllib.request.build_opener(_AuthRedirectHandler)
+
+    # 1. Consultar el Release (por etiqueta o latest).
+    if tag == "latest":
+        release_url = (
+            f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+        )
+    else:
+        release_url = (
+            f"https://api.github.com/repos/{owner}/{repo}"
+            f"/releases/tags/{urllib.parse.quote(tag, safe='')}"
+        )
     request = urllib.request.Request(release_url, headers=headers)
 
     try:
-        with urllib.request.urlopen(request) as response:
+        with opener.open(request) as response:
             release = json.load(response)
     except urllib.error.HTTPError as exc:
         raise urllib.error.URLError(
@@ -158,7 +185,6 @@ def _download_stream(url: str):
         "Accept": "application/octet-stream",
     }
     request_dl = urllib.request.Request(asset_url, headers=download_headers)
-    opener = urllib.request.build_opener(_AuthRedirectHandler)
 
     try:
         return opener.open(request_dl)
