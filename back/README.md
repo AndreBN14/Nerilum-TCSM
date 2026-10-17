@@ -126,6 +126,8 @@ defecto). Un análisis ajeno o inexistente responde `404 not_found`.
   `account_id` + `created_at DESC`). No se almacenan imágenes. El historial
   ordena por `created_at DESC, id DESC`; las filas antiguas con microsegundos se
   normalizan a segundos al leerlas.
+- El artefacto ONNX no se versiona: se publica como asset del GitHub Release.
+  Descárgalo con `python scripts/download_model.py` (ver `app/models/README.md`).
 - El modelo se carga desde la carpeta `MODEL_DIR`, que debe contener un único
   `*.onnx` y su `model_card.json`; las etiquetas se toman de los metadatos ONNX.
   El artefacto es un **YOLOv8n-cls** cuya salida ONNX ya está normalizada

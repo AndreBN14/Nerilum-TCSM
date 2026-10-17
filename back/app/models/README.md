@@ -8,6 +8,34 @@ apunta `MODEL_DIR` a la carpeta:
 MODEL_DIR=app/models
 ```
 
+## Descarga desde GitHub Releases
+
+El artefacto se publica como asset del release (`nerilum-alzheimer-mri-classifier.onnx`).
+Descárgalo a esta carpeta con el script incluido:
+
+```bash
+# desde back/
+python scripts/download_model.py
+```
+
+El script lee `MODEL_URL` (por defecto, el asset del último release),
+`MODEL_DIR` (por defecto `app/models`) y, opcionalmente, `MODEL_SHA256` para
+verificar la integridad:
+
+```bash
+MODEL_SHA256=<hash-del-release> python scripts/download_model.py
+```
+
+Alternativa con `curl` (sustituye `<tag>` por el del release):
+
+```bash
+curl -L -o app/models/nerilum-alzheimer-mri-classifier.onnx \
+  https://github.com/AndreBN14/Nerilum-TCSM/releases/download/<tag>/nerilum-alzheimer-mri-classifier.onnx
+```
+
+La carpeta debe contener **un único** `*.onnx`; el nombre del archivo no se fija
+en el código, por lo que puedes renombrarlo mientras sea el único presente.
+
 `model_card.json` es la fuente única de la identidad pública del modelo:
 
 ```json

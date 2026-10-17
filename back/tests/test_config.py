@@ -29,7 +29,7 @@ def test_default_inference_settings_match_onnx_artifact() -> None:
 def test_legacy_model_env_warns_with_names_but_not_values(monkeypatch, caplog) -> None:
     from app.core.config import warn_legacy_model_env
 
-    monkeypatch.setenv("MODEL_PATH", "/ruta/secreta/best.onnx")
+    monkeypatch.setenv("MODEL_PATH", "/ruta/secreta/modelo.onnx")
     monkeypatch.setenv("MODEL_VERSION", "v9-legacy")
 
     logger = _capture_nerilum(caplog)
@@ -41,7 +41,7 @@ def test_legacy_model_env_warns_with_names_but_not_values(monkeypatch, caplog) -
     assert "MODEL_PATH" in caplog.text
     assert "MODEL_VERSION" in caplog.text
     assert "MODEL_DIR" in caplog.text
-    assert "/ruta/secreta/best.onnx" not in caplog.text
+    assert "/ruta/secreta/modelo.onnx" not in caplog.text
     assert "v9-legacy" not in caplog.text
 
 
