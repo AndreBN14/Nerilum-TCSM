@@ -30,6 +30,7 @@ Solo usa la librería estándar: no añade dependencias al backend.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import sys
@@ -93,15 +94,78 @@ class _AuthRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def _download_stream(url: str):
-    """Abre el asset con autenticación opcional y devuelve la respuesta."""
+    """Descarga un asset de GitHub Release mediante la API REST."""
 
     token = os.environ.get("MODEL_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    request = urllib.request.Request(url)
-    if token:
-        request.add_header("Authorization", f"Bearer {token}")
-        request.add_header("Accept", "application/octet-stream")
+
+    if not token:
+        # Sin token, intenta la URL directa (por ejemplo, si es pública).
+        return urllib.request.urlopen(url)
+
+    parsed = urllib.parse.urlparse(url)
+    parts = parsed.path.strip("/").split("/")
+
+    # Formato esperado:
+    # /OWNER/REPO/releases/download/TAG/FILE.onnx
+    if len(parts) < 6 or parts[2:4] != ["releases", "download"]:
+        raise ValueError(f"URL de Release no reconocida: {url}")
+
+    owner, repo = parts[0], parts[1]
+    tag = parts[4]
+    filename = "/".join(parts[5:])
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Nerilum-TCSM",
+    }
+
+    # 1. Consultar el Release por etiqueta.
+    release_url = (
+        f"https://api.github.com/repos/{owner}/{repo}"
+        f"/releases/tags/{urllib.parse.quote(tag, safe='')}"
+    )
+    request = urllib.request.Request(release_url, headers=headers)
+
+    try:
+        with urllib.request.urlopen(request) as response:
+            release = json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise urllib.error.URLError(
+            f"Error HTTP {exc.code} al consultar el release {tag!r}: {exc.reason}"
+        ) from exc
+
+    # 2. Encontrar el asset por nombre exacto.
+    assets = release.get("assets") or []
+    asset = next((item for item in assets if item.get("name") == filename), None)
+
+    if asset is None:
+        available = ", ".join(item.get("name", "") for item in assets)
+        raise FileNotFoundError(
+            f"No se encontró {filename!r} en el Release {tag!r}. "
+            f"Assets disponibles: {available or '(ninguno)'}"
+        )
+
+    # 3. Descargar por la API de assets.
+    asset_url = (
+        f"https://api.github.com/repos/{owner}/{repo}"
+        f"/releases/assets/{asset['id']}"
+    )
+
+    download_headers = {
+        **headers,
+        "Accept": "application/octet-stream",
+    }
+    request_dl = urllib.request.Request(asset_url, headers=download_headers)
     opener = urllib.request.build_opener(_AuthRedirectHandler)
-    return opener.open(request)
+
+    try:
+        return opener.open(request_dl)
+    except urllib.error.HTTPError as exc:
+        raise urllib.error.URLError(
+            f"Error HTTP {exc.code} al descargar el modelo desde assets/{asset['id']}"
+        ) from exc
 
 
 def main() -> int:
