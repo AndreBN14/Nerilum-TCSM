@@ -122,8 +122,28 @@ def main() -> int:
         try:
             with _download_stream(url) as response, tmp_path.open("wb") as out:
                 shutil.copyfileobj(response, out, length=CHUNK_SIZE)
+        except urllib.error.HTTPError as exc:
+            print(
+                f"Error HTTP {exc.code} al descargar el modelo.",
+                file=sys.stderr,
+            )
+            if exc.code == 404:
+                print(
+                    "Verifica la etiqueta del Release, el nombre del asset "
+                    "y los permisos de MODEL_TOKEN.",
+                    file=sys.stderr,
+                )
+            elif exc.code == 401:
+                print("El token no es válido o ha expirado.", file=sys.stderr)
+            elif exc.code == 403:
+                print(
+                    "El token no tiene permisos suficientes o GitHub "
+                    "ha rechazado la solicitud.",
+                    file=sys.stderr,
+                )
+            return 1
         except urllib.error.URLError as exc:
-            print(f"Error al descargar el modelo: {exc}", file=sys.stderr)
+            print(f"Error de conexión al descargar el modelo: {exc}", file=sys.stderr)
             return 1
 
         if expected_sha is not None:
