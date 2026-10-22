@@ -8,6 +8,9 @@ Permite seleccionar y previsualizar imágenes JPG/PNG, pero todavía no hay mode
 
 Para preparar y activar el acceso real posteriormente, consulta [SUPABASE_SETUP.md](SUPABASE_SETUP.md).
 El modo mock sigue siendo el predeterminado; `AUTH_MODE=supabase` selecciona el repositorio real.
+Para conectar análisis e historial a FastAPI local o publicado, consulta
+[API_SETUP.md](API_SETUP.md). `API_BASE_URL` selecciona la dirección del backend,
+independientemente de la URL de Supabase.
 
 - `lib/presentation/views/`: pantallas y navegación, que observan `ChangeNotifier`.
 - `lib/presentation/viewmodels/`: estado y acciones de autenticación, análisis y apariencia.

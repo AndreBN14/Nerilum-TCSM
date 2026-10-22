@@ -10,7 +10,11 @@ class MockAnalysisRepository implements AnalysisRepository {
   final AccountRepository accounts;
 
   @override
-  Future<AnalysisResult> analyze(SelectedImage image) => source.analyze(image);
+  Future<AnalysisResult> analyze(
+    SelectedImage image, {
+    String? displayName,
+    String? idempotencyKey,
+  }) => source.analyze(image);
 
   @override
   Future<List<AnalysisResult>> history() =>

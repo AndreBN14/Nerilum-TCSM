@@ -35,6 +35,8 @@ class AppDependencies {
     HistorySortRepository? historySort,
     AppAppearance initialAppearance = AppAppearance.dark,
     Future<void> Function(bool)? saveLightMode,
+    this.usesRemoteAnalysis = false,
+    this.onDispose,
   }) {
     accountRepository =
         accounts ??
@@ -79,6 +81,8 @@ class AppDependencies {
   late final AccountRepository accountRepository;
   late final AppearanceViewModel appearanceViewModel;
   late final MainViewModel mainViewModel;
+  final bool usesRemoteAnalysis;
+  final void Function()? onDispose;
 
   Future<void> restoreLocalState() async {
     await appearanceViewModel.load();
@@ -88,7 +92,7 @@ class AppDependencies {
     } catch (_) {
       // Si no se puede recuperar la sesión mock, se ofrece la bienvenida.
     }
-    if (accountRepository.currentAccount != null) {
+    if (accountRepository.currentAccount != null && !usesRemoteAnalysis) {
       await mainViewModel.refreshHistory();
     }
   }
@@ -102,5 +106,6 @@ class AppDependencies {
   void dispose() {
     appearanceViewModel.dispose();
     mainViewModel.dispose();
+    onDispose?.call();
   }
 }

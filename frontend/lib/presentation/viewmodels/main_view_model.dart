@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../domain/models/account.dart';
 import '../../domain/models/analysis_result.dart';
@@ -38,6 +39,11 @@ class MainViewModel extends ChangeNotifier {
   String? error;
   bool processing = false;
   bool picking = false;
+  String analysisName = '';
+  String? _operationKey;
+  String? historyError;
+  bool historyLoading = false;
+  int _historyRequest = 0;
   List<AnalysisResult> _analyses = const [];
   HistorySort historySort = HistorySort.newest;
   bool _disposed = false;
@@ -98,6 +104,8 @@ class MainViewModel extends ChangeNotifier {
       if (_disposed || session != _sessionVersion || selected == null) return;
       tab = 1;
       image = selected;
+      analysisName = '';
+      _operationKey = null;
       result = null;
       error = null;
       notifyListeners();
@@ -105,6 +113,7 @@ class MainViewModel extends ChangeNotifier {
       if (_disposed || session != _sessionVersion) return;
       tab = 1;
       image = null;
+      _operationKey = null;
       result = null;
       error = failure.message;
       notifyListeners();
@@ -116,6 +125,8 @@ class MainViewModel extends ChangeNotifier {
   void removeImage() {
     if (processing) return;
     image = null;
+    analysisName = '';
+    _operationKey = null;
     result = null;
     error = null;
     notifyListeners();
@@ -128,11 +139,19 @@ class MainViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final analyzed = await analyzeImage(image!);
+      _operationKey ??= const Uuid().v4();
+      final analyzed = await analyzeImage(
+        image!,
+        displayName: analysisName.trim().isEmpty ? null : analysisName.trim(),
+        idempotencyKey: _operationKey,
+      );
       if (_disposed || session != _sessionVersion) return;
       result = analyzed;
       await refreshHistory();
     } on AnalysisUnavailable catch (failure) {
+      if (_disposed || session != _sessionVersion) return;
+      error = failure.message;
+    } on AnalysisFailure catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;
     } catch (_) {
@@ -148,14 +167,47 @@ class MainViewModel extends ChangeNotifier {
 
   Future<void> refreshHistory() async {
     final session = _sessionVersion;
+    final request = ++_historyRequest;
+    historyLoading = true;
+    historyError = null;
+    notifyListeners();
     try {
       final records = await loadHistory();
-      if (_disposed || session != _sessionVersion) return;
+      if (_disposed ||
+          session != _sessionVersion ||
+          request != _historyRequest) {
+        return;
+      }
       _analyses = records;
-      notifyListeners();
-    } catch (_) {
-      // El historial actual es opcional; no inventar registros si falla.
+    } catch (failure) {
+      if (_disposed ||
+          session != _sessionVersion ||
+          request != _historyRequest) {
+        return;
+      }
+      historyError = switch (failure) {
+        AnalysisFailure() => failure.message,
+        AnalysisUnavailable() => failure.message,
+        _ => 'No se pudo cargar el historial. Inténtalo de nuevo.',
+      };
+    } finally {
+      if (!_disposed &&
+          session == _sessionVersion &&
+          request == _historyRequest) {
+        historyLoading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  void setAnalysisName(String value) {
+    if (processing) return;
+    if (analysisName.trim() != value.trim()) {
+      _operationKey = null;
+      result = null;
+    }
+    analysisName = value;
+    notifyListeners();
   }
 
   Future<void> logout() async {
@@ -166,6 +218,11 @@ class MainViewModel extends ChangeNotifier {
   void clearSessionState() {
     _sessionVersion++;
     image = null;
+    analysisName = '';
+    _operationKey = null;
+    _historyRequest++;
+    historyLoading = false;
+    historyError = null;
     result = null;
     error = null;
     _analyses = const [];

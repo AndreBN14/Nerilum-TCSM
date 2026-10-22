@@ -16,6 +16,8 @@ class AnalysisView extends StatelessWidget {
     required this.onPick,
     required this.onRemove,
     required this.onAnalyze,
+    required this.analysisName,
+    required this.onNameChanged,
   });
 
   final SelectedImage? image;
@@ -26,6 +28,8 @@ class AnalysisView extends StatelessWidget {
   final VoidCallback onPick;
   final VoidCallback onRemove;
   final VoidCallback onAnalyze;
+  final String analysisName;
+  final ValueChanged<String> onNameChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +135,19 @@ class AnalysisView extends StatelessWidget {
               ],
             ),
           ),
+          if (image != null) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              key: ValueKey(image),
+              initialValue: analysisName,
+              enabled: !processing,
+              maxLength: 120,
+              onChanged: onNameChanged,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del análisis (opcional)',
+              ),
+            ),
+          ],
           if (error != null) ...[
             const SizedBox(height: 16),
             Semantics(
@@ -148,8 +165,8 @@ class AnalysisView extends StatelessWidget {
           const SizedBox(height: 20),
           MintButton(
             label: processing
-                ? 'Comprobando disponibilidad'
-                : 'Analizar imagen',
+                ? 'Analizando imagen'
+                : (error == null ? 'Analizar imagen' : 'Reintentar análisis'),
             icon: processing ? Icons.hourglass_top : Icons.arrow_forward,
             onPressed: image == null || processing ? null : onAnalyze,
           ),

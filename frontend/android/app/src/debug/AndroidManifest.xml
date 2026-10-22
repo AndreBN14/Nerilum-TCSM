@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- HTTP local durante flutter run; las versiones release mantienen HTTPS. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

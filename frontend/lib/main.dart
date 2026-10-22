@@ -6,6 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/app_dependencies.dart';
 import 'app/auth_configuration.dart';
+import 'app/api_configuration.dart';
+import 'data/datasources/http_analysis_data_source.dart';
+import 'data/repositories/http_analysis_repository.dart';
 import 'data/datasources/supabase_account_data_source.dart';
 import 'data/repositories/supabase_account_repository.dart';
 import 'app/app_scope.dart';
@@ -20,15 +23,35 @@ import 'presentation/theme/nerilum_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   const config = AuthConfiguration();
+  const apiConfig = ApiConfiguration();
   AppDependencies dependencies;
   try {
     config.validate();
+    apiConfig.validate(authMode: config.mode);
     if (config.isSupabase) {
       await Supabase.initialize(url: config.url, publishableKey: config.key);
+      final client = Supabase.instance.client;
+      final analysisSource = apiConfig.enabled
+          ? HttpAnalysisDataSource(
+              baseUri: apiConfig.baseUri,
+              accessToken: () async {
+                var session = client.auth.currentSession;
+                if (session != null && session.isExpired) {
+                  session = (await client.auth.refreshSession()).session;
+                }
+                return session?.accessToken;
+              },
+            )
+          : null;
       dependencies = AppDependencies(
         accounts: SupabaseAccountRepository(
           SupabaseAccountDataSource(Supabase.instance.client, config.redirect),
         ),
+        analysis: analysisSource == null
+            ? const UnconfiguredAnalysisRepository()
+            : HttpAnalysisRepository(analysisSource),
+        usesRemoteAnalysis: analysisSource != null,
+        onDispose: analysisSource?.close,
       );
     } else {
       dependencies = AppDependencies();
@@ -39,8 +62,8 @@ Future<void> main() async {
         home: Scaffold(
           body: Center(
             child: Text(
-              'No se pudo inicializar la autenticación. Revisa AUTH_MODE, '
-              'SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY.',
+              'No se pudo inicializar la app. Revisa AUTH_MODE, '
+              'SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY y API_BASE_URL.',
             ),
           ),
         ),
@@ -49,7 +72,11 @@ Future<void> main() async {
     return;
   }
   await dependencies.restoreLocalState();
-  runApp(NerilumApp(dependencies: dependencies));
+  runApp(NerilumApp(dependencies: dependencies, disposeDependencies: true));
+  if (dependencies.usesRemoteAnalysis &&
+      dependencies.accountRepository.currentAccount != null) {
+    unawaited(dependencies.mainViewModel.refreshHistory());
+  }
 }
 
 class NerilumApp extends StatefulWidget {
@@ -58,11 +85,13 @@ class NerilumApp extends StatefulWidget {
     this.dependencies,
     this.initialLightMode = false,
     this.saveLightMode,
+    this.disposeDependencies = false,
   });
 
   final AppDependencies? dependencies;
   final bool initialLightMode;
   final Future<void> Function(bool)? saveLightMode;
+  final bool disposeDependencies;
 
   @override
   State<NerilumApp> createState() => _NerilumAppState();
@@ -82,6 +111,7 @@ class _NerilumAppState extends State<NerilumApp> {
           if (account?.email == activeEmail) return;
           activeEmail = account?.email;
           if (account != null) {
+            _dependencies.mainViewModel.clearSessionState();
             _dependencies.mainViewModel.refreshHistory();
             _navigatorKey.currentState?.pushNamedAndRemoveUntil(
               '/app',
@@ -109,7 +139,9 @@ class _NerilumAppState extends State<NerilumApp> {
   @override
   void dispose() {
     _sessionSubscription?.cancel();
-    if (widget.dependencies == null) _dependencies.dispose();
+    if (widget.dependencies == null || widget.disposeDependencies) {
+      _dependencies.dispose();
+    }
     super.dispose();
   }
 

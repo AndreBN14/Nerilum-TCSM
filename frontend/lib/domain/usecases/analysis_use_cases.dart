@@ -5,7 +5,15 @@ import '../repositories/analysis_repository.dart';
 class AnalyzeImage {
   const AnalyzeImage(this.repository);
   final AnalysisRepository repository;
-  Future<AnalysisResult> call(SelectedImage image) => repository.analyze(image);
+  Future<AnalysisResult> call(
+    SelectedImage image, {
+    String? displayName,
+    String? idempotencyKey,
+  }) => repository.analyze(
+    image,
+    displayName: displayName,
+    idempotencyKey: idempotencyKey,
+  );
 }
 
 class LoadHistory {
