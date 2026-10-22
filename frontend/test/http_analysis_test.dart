@@ -33,7 +33,7 @@ SelectedImage _image() => SelectedImage(
 HttpAnalysisDataSource _source(
   http.Client client, {
   Future<String?> Function()? token,
-  Duration timeout = const Duration(seconds: 60),
+  Duration timeout = const Duration(seconds: 120),
 }) => HttpAnalysisDataSource(
   baseUri: Uri.parse('https://api.ejemplo.com/api/v1/'),
   client: client,
@@ -85,7 +85,8 @@ void main() {
         MockClient((request) async {
           expect(request.headers['Authorization'], 'Bearer test-access-token');
           expect(request.url.queryParameters['limit'], '100');
-          expect(request.url.queryParameters['sort'], 'newest');
+          // El backend usa newest por defecto; tampoco exigir sort a versiones anteriores.
+          expect(request.url.queryParameters.containsKey('sort'), isFalse);
           expect(request.url.queryParameters['offset'], '$calls');
           calls++;
           return http.Response(

@@ -150,7 +150,7 @@ class AppShell extends StatelessWidget {
                 analyses: model.analyses,
                 historyLoading: model.historyLoading,
                 historyError: model.historyError,
-                onRetryHistory: model.refreshHistory,
+                onRefreshHistory: model.refreshHistory,
                 historySort: model.historySort,
                 onSortChanged: (sort) => _changeSort(context, sort),
                 onOpenAnalysis: (record) => _openAnalysis(context, record),

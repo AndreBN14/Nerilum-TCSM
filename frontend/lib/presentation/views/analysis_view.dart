@@ -161,14 +161,23 @@ class AnalysisView extends StatelessWidget {
           if (result != null) ...[
             const SizedBox(height: 16),
             ResultCard(result: result!, onTap: null),
+            const SizedBox(height: 12),
+            Text(
+              'Categoría del modelo: ${result!.category}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
           ],
           const SizedBox(height: 20),
           MintButton(
             label: processing
                 ? 'Analizando imagen'
-                : (error == null ? 'Analizar imagen' : 'Reintentar análisis'),
+                : (result != null
+                      ? 'Análisis completado'
+                      : error == null ? 'Analizar imagen' : 'Reintentar análisis'),
             icon: processing ? Icons.hourglass_top : Icons.arrow_forward,
-            onPressed: image == null || processing ? null : onAnalyze,
+            onPressed: image == null || processing || result != null
+                ? null
+                : onAnalyze,
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(

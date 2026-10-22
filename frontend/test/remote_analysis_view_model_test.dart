@@ -67,6 +67,9 @@ void main() {
       expect(repository.names, ['Mi análisis', 'Mi análisis']);
       expect(model.result?.id, 'an_1');
       expect(model.historyError, isNotNull);
+      // Una pulsación después del éxito no debe reenviar la operación completada.
+      await model.analyze();
+      expect(repository.keys, hasLength(2));
       model.setAnalysisName('Otro análisis');
       await model.analyze();
       expect(repository.keys[2], isNot(repository.keys[1]));

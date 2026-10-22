@@ -17,9 +17,9 @@ class HomeView extends StatelessWidget {
     required this.onOpenAnalysis,
     required this.historySort,
     required this.onSortChanged,
-    this.historyLoading = false,
-    this.historyError,
-    this.onRetryHistory,
+    required this.historyLoading,
+    required this.historyError,
+    required this.onRefreshHistory,
   });
 
   final VoidCallback onProfile;
@@ -31,7 +31,7 @@ class HomeView extends StatelessWidget {
   final ValueChanged<HistorySort> onSortChanged;
   final bool historyLoading;
   final String? historyError;
-  final VoidCallback? onRetryHistory;
+  final VoidCallback onRefreshHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -105,7 +105,7 @@ class HomeView extends StatelessWidget {
           HistoryStatus(
             loading: historyLoading,
             error: historyError,
-            onRetry: onRetryHistory,
+            onRetry: onRefreshHistory,
           ),
           if (analyses.isEmpty && !historyLoading && historyError == null)
             EmptyHistory(onSelect: onSelectImage)

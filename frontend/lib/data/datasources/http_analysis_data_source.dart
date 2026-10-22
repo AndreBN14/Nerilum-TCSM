@@ -13,7 +13,7 @@ class HttpAnalysisDataSource {
     required this.baseUri,
     required this.accessToken,
     http.Client? client,
-    this.timeout = const Duration(seconds: 60),
+    this.timeout = const Duration(seconds: 120),
   }) : _client = client ?? http.Client();
 
   final Uri baseUri;
@@ -37,23 +37,24 @@ class HttpAnalysisDataSource {
     request.followRedirects = false;
     http.Response response;
     try {
+      // Un solo envío HTTP. Los reintentos explícitos conservan Idempotency-Key.
       response = await _client
           .send(request)
           .then(http.Response.fromStream)
           .timeout(timeout);
     } on TimeoutException {
       throw const AnalysisFailure(
-        'El servidor tardó demasiado. Puedes reintentar la misma operación.',
+        'El servidor tardó demasiado. Revisa el historial antes de reintentar la misma operación.',
       );
     } on http.ClientException {
       throw const AnalysisFailure(
-        'No se pudo conectar con el backend. Comprueba la dirección y la red.',
+        'No se pudo completar la conexión. Revisa el historial antes de reintentar.',
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       if (response.statusCode == 503) {
         throw const AnalysisUnavailable(
-          'El backend o el modelo aún no están disponibles. Inténtalo más tarde.',
+          'El backend o el modelo no están disponibles. Inténtalo más tarde.',
         );
       }
       throw AnalysisFailure(switch (response.statusCode) {
@@ -99,7 +100,7 @@ class HttpAnalysisDataSource {
       return AnalysisResultDto.fromJson(json);
     } on FormatException {
       throw const AnalysisFailure(
-        'El backend devolvió un resultado no válido.',
+        'El backend devolvió un resultado no válido. Revisa el historial antes de repetir.',
       );
     }
   }
@@ -110,15 +111,11 @@ class HttpAnalysisDataSource {
     final records = <String, AnalysisResult>{};
     var offset = 0;
     while (true) {
+      // El orden por defecto del backend es newest. No exigir parámetros nuevos
+      // permite leer el historial tanto antes como después del despliegue.
       final uri = baseUri
           .resolve('analyses')
-          .replace(
-            queryParameters: {
-              'limit': '100',
-              'offset': '$offset',
-              'sort': 'newest',
-            },
-          );
+          .replace(queryParameters: {'limit': '100', 'offset': '$offset'});
       final json = await _send(http.Request('GET', uri));
       try {
         final items = json['items'];

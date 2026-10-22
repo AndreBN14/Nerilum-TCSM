@@ -68,10 +68,9 @@ class ProfileView extends StatelessWidget {
             'Privacidad y datos',
             Text(
               AppScope.of(context).usesRemoteAnalysis
-                  ? 'La imagen seleccionada se envía al backend configurado para '
-                        'realizar el análisis. El backend actual conserva el resultado '
-                        'y su nombre, no la imagen. Supabase Auth gestiona el acceso '
-                        'y tu perfil de usuario.'
+                  ? 'Supabase Auth gestiona tu acceso. La imagen se envía al backend '
+                        'configurado para clasificarla. El backend actual guarda el '
+                        'resultado y su nombre, no la imagen. El resultado es orientativo.'
                   : AppScope.of(context).accountRepository.isDemo
                   ? 'Esta demostración permite seleccionar una imagen local para verla en pantalla. '
                         'No se envía a un servicio de análisis. El historial de la cuenta demo '

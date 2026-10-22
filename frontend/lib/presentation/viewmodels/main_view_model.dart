@@ -133,7 +133,7 @@ class MainViewModel extends ChangeNotifier {
   }
 
   Future<void> analyze() async {
-    if (image == null || processing) return;
+    if (image == null || processing || result != null) return;
     final session = _sessionVersion;
     processing = true;
     error = null;

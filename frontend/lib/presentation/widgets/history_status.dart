@@ -10,7 +10,7 @@ class HistoryStatus extends StatelessWidget {
 
   final bool loading;
   final String? error;
-  final VoidCallback? onRetry;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -30,21 +30,23 @@ class HistoryStatus extends StatelessWidget {
         ),
       );
     }
-    if (error == null) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Semantics(
-          liveRegion: true,
-          child: Text(
-            error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+        if (error != null)
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ),
-        ),
         TextButton.icon(
           onPressed: onRetry,
           icon: const Icon(Icons.refresh),
-          label: const Text('Reintentar historial'),
+          label: Text(
+            error == null ? 'Actualizar historial' : 'Reintentar historial',
+          ),
         ),
       ],
     );
