@@ -38,6 +38,10 @@ class MainViewModel extends ChangeNotifier {
   String? error;
   bool processing = false;
   bool picking = false;
+  String analysisName = '';
+  String? historyError;
+  bool historyLoading = false;
+  int _historyRequest = 0;
   List<AnalysisResult> _analyses = const [];
   HistorySort historySort = HistorySort.newest;
   bool _disposed = false;
@@ -98,6 +102,7 @@ class MainViewModel extends ChangeNotifier {
       if (_disposed || session != _sessionVersion || selected == null) return;
       tab = 1;
       image = selected;
+      analysisName = '';
       result = null;
       error = null;
       notifyListeners();
@@ -116,23 +121,30 @@ class MainViewModel extends ChangeNotifier {
   void removeImage() {
     if (processing) return;
     image = null;
+    analysisName = '';
     result = null;
     error = null;
     notifyListeners();
   }
 
   Future<void> analyze() async {
-    if (image == null || processing) return;
+    if (image == null || processing || result != null) return;
     final session = _sessionVersion;
     processing = true;
     error = null;
     notifyListeners();
     try {
-      final analyzed = await analyzeImage(image!);
+      final analyzed = await analyzeImage(
+        image!,
+        displayName: analysisName.trim().isEmpty ? null : analysisName.trim(),
+      );
       if (_disposed || session != _sessionVersion) return;
       result = analyzed;
       await refreshHistory();
     } on AnalysisUnavailable catch (failure) {
+      if (_disposed || session != _sessionVersion) return;
+      error = failure.message;
+    } on AnalysisFailure catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;
     } catch (_) {
@@ -148,14 +160,42 @@ class MainViewModel extends ChangeNotifier {
 
   Future<void> refreshHistory() async {
     final session = _sessionVersion;
+    final request = ++_historyRequest;
+    historyLoading = true;
+    historyError = null;
+    notifyListeners();
     try {
       final records = await loadHistory();
-      if (_disposed || session != _sessionVersion) return;
+      if (_disposed ||
+          session != _sessionVersion ||
+          request != _historyRequest) {
+        return;
+      }
       _analyses = records;
-      notifyListeners();
-    } catch (_) {
-      // El historial actual es opcional; no inventar registros si falla.
+    } catch (failure) {
+      if (_disposed ||
+          session != _sessionVersion ||
+          request != _historyRequest) {
+        return;
+      }
+      historyError = switch (failure) {
+        AnalysisFailure() => failure.message,
+        AnalysisUnavailable() => failure.message,
+        _ => 'No se pudo cargar el historial. Inténtalo de nuevo.',
+      };
+    } finally {
+      if (!_disposed &&
+          session == _sessionVersion &&
+          request == _historyRequest) {
+        historyLoading = false;
+        notifyListeners();
+      }
     }
+  }
+
+  void setAnalysisName(String value) {
+    if (processing || result != null) return;
+    analysisName = value;
   }
 
   Future<void> logout() async {
@@ -165,6 +205,10 @@ class MainViewModel extends ChangeNotifier {
 
   void clearSessionState() {
     _sessionVersion++;
+    _historyRequest++;
+    analysisName = '';
+    historyLoading = false;
+    historyError = null;
     image = null;
     result = null;
     error = null;

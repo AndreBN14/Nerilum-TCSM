@@ -6,6 +6,7 @@ class AnalysisResult {
     this.probability,
     this.isDemo = false,
     this.scores = const {},
+    this.id,
   });
 
   // La categoría debe corresponder exactamente a la etiqueta del modelo.
@@ -17,4 +18,5 @@ class AnalysisResult {
   final double? probability;
   final bool isDemo;
   final Map<String, double> scores;
+  final String? id;
 }

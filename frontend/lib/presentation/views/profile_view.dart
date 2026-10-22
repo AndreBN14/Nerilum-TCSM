@@ -67,7 +67,11 @@ class ProfileView extends StatelessWidget {
             context,
             'Privacidad y datos',
             Text(
-              AppScope.of(context).accountRepository.isDemo
+              AppScope.of(context).usesRemoteAnalysis
+                  ? 'Supabase Auth gestiona tu acceso. La imagen se envía al backend '
+                        'configurado para clasificarla. El backend actual guarda el '
+                        'resultado y su nombre, no la imagen. El resultado es orientativo.'
+                  : AppScope.of(context).accountRepository.isDemo
                   ? 'Esta demostración permite seleccionar una imagen local para verla en pantalla. '
                         'No se envía a un servicio de análisis. El historial de la cuenta demo '
                         'contiene únicamente ejemplos precargados, no resultados ni imágenes reales. '
@@ -87,10 +91,11 @@ class ProfileView extends StatelessWidget {
           onTap: () => _openPage(
             context,
             'Acerca de Nerilum',
-            const Text(
+            Text(
               'Nerilum · Prototipo académico\nVersión 1.0.0\n\n'
               'Explora el diseño de una herramienta de clasificación de imágenes cerebrales. '
-              'El modelo de IA todavía no está conectado; no produce resultados ni diagnósticos médicos.',
+              '${AppScope.of(context).usesRemoteAnalysis ? 'La clasificación se solicita al backend. Los resultados son orientativos '
+                        'y no constituyen diagnósticos médicos.' : 'El modelo de IA todavía no está conectado; no produce resultados ni diagnósticos médicos.'}',
             ),
           ),
         ),

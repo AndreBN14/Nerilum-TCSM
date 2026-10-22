@@ -16,6 +16,8 @@ class AnalysisView extends StatelessWidget {
     required this.onPick,
     required this.onRemove,
     required this.onAnalyze,
+    required this.analysisName,
+    required this.onNameChanged,
   });
 
   final SelectedImage? image;
@@ -26,6 +28,8 @@ class AnalysisView extends StatelessWidget {
   final VoidCallback onPick;
   final VoidCallback onRemove;
   final VoidCallback onAnalyze;
+  final String analysisName;
+  final ValueChanged<String> onNameChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +135,19 @@ class AnalysisView extends StatelessWidget {
               ],
             ),
           ),
+          if (image != null) ...[
+            const SizedBox(height: 16),
+            TextFormField(
+              key: ValueKey(image),
+              initialValue: analysisName,
+              enabled: !processing && result == null,
+              maxLength: 120,
+              onChanged: onNameChanged,
+              decoration: const InputDecoration(
+                labelText: 'Nombre del análisis (opcional)',
+              ),
+            ),
+          ],
           if (error != null) ...[
             const SizedBox(height: 16),
             Semantics(
@@ -144,14 +161,21 @@ class AnalysisView extends StatelessWidget {
           if (result != null) ...[
             const SizedBox(height: 16),
             ResultCard(result: result!, onTap: null),
+            const SizedBox(height: 12),
+            Text(
+              'Categoría del modelo: ${result!.category}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
           ],
           const SizedBox(height: 20),
           MintButton(
             label: processing
-                ? 'Comprobando disponibilidad'
-                : 'Analizar imagen',
+                ? 'Analizando imagen'
+                : (result == null ? 'Analizar imagen' : 'Análisis completado'),
             icon: processing ? Icons.hourglass_top : Icons.arrow_forward,
-            onPressed: image == null || processing ? null : onAnalyze,
+            onPressed: image == null || processing || result != null
+                ? null
+                : onAnalyze,
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(

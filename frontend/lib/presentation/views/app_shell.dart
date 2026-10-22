@@ -6,6 +6,7 @@ import '../../domain/models/history_sort.dart';
 import '../theme/nerilum_theme.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/history_sort_control.dart';
+import '../widgets/history_status.dart';
 import '../widgets/main_components.dart';
 import 'analysis_view.dart';
 import 'home_view.dart';
@@ -48,14 +49,21 @@ class AppShell extends StatelessWidget {
                   const DemoHistoryNotice(),
                 ],
                 const SizedBox(height: 20),
-                if (model.analyses.isEmpty)
+                HistoryStatus(
+                  loading: model.historyLoading,
+                  error: model.historyError,
+                  onRetry: model.refreshHistory,
+                ),
+                if (model.analyses.isEmpty &&
+                    !model.historyLoading &&
+                    model.historyError == null)
                   EmptyHistory(
                     onSelect: () {
                       Navigator.of(context).pop();
                       model.selectFromHome();
                     },
                   )
-                else
+                else if (model.analyses.isNotEmpty)
                   for (final record in model.analyses) ...[
                     ResultCard(
                       result: record,
@@ -140,6 +148,9 @@ class AppShell extends StatelessWidget {
                 onSelectImage: model.selectFromHome,
                 onHistory: () => _history(context),
                 analyses: model.analyses,
+                historyLoading: model.historyLoading,
+                historyError: model.historyError,
+                onRefreshHistory: model.refreshHistory,
                 historySort: model.historySort,
                 onSortChanged: (sort) => _changeSort(context, sort),
                 onOpenAnalysis: (record) => _openAnalysis(context, record),
@@ -153,6 +164,8 @@ class AppShell extends StatelessWidget {
                 onPick: model.pickImage,
                 onRemove: model.removeImage,
                 onAnalyze: model.analyze,
+                analysisName: model.analysisName,
+                onNameChanged: model.setAnalysisName,
               ),
               _ => ProfileView(
                 account: model.account,

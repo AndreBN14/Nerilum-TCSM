@@ -31,7 +31,10 @@ class _Analysis implements AnalysisRepository {
   );
 
   @override
-  Future<AnalysisResult> analyze(SelectedImage image) async {
+  Future<AnalysisResult> analyze(
+    SelectedImage image, {
+    String? displayName,
+  }) async {
     expect(image.name, 'prueba.png');
     return result;
   }

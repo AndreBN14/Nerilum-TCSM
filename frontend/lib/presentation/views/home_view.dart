@@ -4,6 +4,7 @@ import '../../domain/models/analysis_result.dart';
 import '../../domain/models/history_sort.dart';
 import '../theme/nerilum_theme.dart';
 import '../widgets/history_sort_control.dart';
+import '../widgets/history_status.dart';
 import '../widgets/main_components.dart';
 
 class HomeView extends StatelessWidget {
@@ -16,6 +17,9 @@ class HomeView extends StatelessWidget {
     required this.onOpenAnalysis,
     required this.historySort,
     required this.onSortChanged,
+    required this.historyLoading,
+    required this.historyError,
+    required this.onRefreshHistory,
   });
 
   final VoidCallback onProfile;
@@ -25,6 +29,9 @@ class HomeView extends StatelessWidget {
   final ValueChanged<AnalysisResult> onOpenAnalysis;
   final HistorySort historySort;
   final ValueChanged<HistorySort> onSortChanged;
+  final bool historyLoading;
+  final String? historyError;
+  final VoidCallback onRefreshHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -95,9 +102,14 @@ class HomeView extends StatelessWidget {
             const DemoHistoryNotice(),
           ],
           const SizedBox(height: 12),
-          if (analyses.isEmpty)
+          HistoryStatus(
+            loading: historyLoading,
+            error: historyError,
+            onRetry: onRefreshHistory,
+          ),
+          if (analyses.isEmpty && !historyLoading && historyError == null)
             EmptyHistory(onSelect: onSelectImage)
-          else
+          else if (analyses.isNotEmpty)
             SizedBox(
               height: 224,
               child: ListView.separated(

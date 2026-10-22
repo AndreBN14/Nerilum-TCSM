@@ -6,7 +6,12 @@ class AnalysisUnavailable implements Exception {
   final String message;
 }
 
+class AnalysisFailure implements Exception {
+  const AnalysisFailure(this.message);
+  final String message;
+}
+
 abstract class AnalysisRepository {
-  Future<AnalysisResult> analyze(SelectedImage image);
+  Future<AnalysisResult> analyze(SelectedImage image, {String? displayName});
   Future<List<AnalysisResult>> history();
 }
