@@ -2,3 +2,24 @@ back/.env
 back/.venv/
 **/__pycache__/
 back/.pytest_cache/
+
+# OpenCode, agentes y skills locales
+.opencode/
+.agents/
+.agent/
+opencode.json
+opencode.jsonc
+opencode.local.json
+opencode.local.jsonc
+AGENTS.md
+AGENTS.local.md
+skills-lock.json
+
+# Configuración local de servidores MCP
+.mcp/
+.mcp.json
+.mcp.jsonc
+mcp.json
+mcp.jsonc
+mcp-config.json
+mcp_config.json
