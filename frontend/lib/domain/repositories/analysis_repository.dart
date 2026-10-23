@@ -12,6 +12,10 @@ class AnalysisFailure implements Exception {
 }
 
 abstract class AnalysisRepository {
-  Future<AnalysisResult> analyze(SelectedImage image, {String? displayName});
+  Future<AnalysisResult> analyze(
+    SelectedImage image, {
+    String? displayName,
+    String? idempotencyKey,
+  });
   Future<List<AnalysisResult>> history();
 }

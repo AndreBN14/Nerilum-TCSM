@@ -7,6 +7,7 @@ class HistoryStatus extends StatelessWidget {
     required this.error,
     required this.onRetry,
   });
+
   final bool loading;
   final String? error;
   final VoidCallback onRetry;

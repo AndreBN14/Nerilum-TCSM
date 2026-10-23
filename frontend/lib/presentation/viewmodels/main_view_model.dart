@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../domain/models/account.dart';
 import '../../domain/models/analysis_result.dart';
@@ -39,6 +40,7 @@ class MainViewModel extends ChangeNotifier {
   bool processing = false;
   bool picking = false;
   String analysisName = '';
+  String? _operationKey;
   String? historyError;
   bool historyLoading = false;
   int _historyRequest = 0;
@@ -103,6 +105,7 @@ class MainViewModel extends ChangeNotifier {
       tab = 1;
       image = selected;
       analysisName = '';
+      _operationKey = null;
       result = null;
       error = null;
       notifyListeners();
@@ -110,6 +113,7 @@ class MainViewModel extends ChangeNotifier {
       if (_disposed || session != _sessionVersion) return;
       tab = 1;
       image = null;
+      _operationKey = null;
       result = null;
       error = failure.message;
       notifyListeners();
@@ -122,6 +126,7 @@ class MainViewModel extends ChangeNotifier {
     if (processing) return;
     image = null;
     analysisName = '';
+    _operationKey = null;
     result = null;
     error = null;
     notifyListeners();
@@ -134,9 +139,11 @@ class MainViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
+      _operationKey ??= const Uuid().v4();
       final analyzed = await analyzeImage(
         image!,
         displayName: analysisName.trim().isEmpty ? null : analysisName.trim(),
+        idempotencyKey: _operationKey,
       );
       if (_disposed || session != _sessionVersion) return;
       result = analyzed;
@@ -194,8 +201,13 @@ class MainViewModel extends ChangeNotifier {
   }
 
   void setAnalysisName(String value) {
-    if (processing || result != null) return;
+    if (processing) return;
+    if (analysisName.trim() != value.trim()) {
+      _operationKey = null;
+      result = null;
+    }
     analysisName = value;
+    notifyListeners();
   }
 
   Future<void> logout() async {
@@ -205,11 +217,12 @@ class MainViewModel extends ChangeNotifier {
 
   void clearSessionState() {
     _sessionVersion++;
-    _historyRequest++;
+    image = null;
     analysisName = '';
+    _operationKey = null;
+    _historyRequest++;
     historyLoading = false;
     historyError = null;
-    image = null;
     result = null;
     error = null;
     _analyses = const [];

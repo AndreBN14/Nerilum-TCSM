@@ -1,13 +1,21 @@
 # Nerilum · frontend
 
 Prototipo Flutter de entrada, bienvenida, autenticación, Inicio, Nuevo análisis y Perfil.
-El acceso usa la cuenta de demostración `demo@nerilum.app` / `Demo1234`.
-Permite seleccionar y previsualizar imágenes JPG/PNG, pero todavía no hay modelo de clasificación conectado. La cuenta demo presenta un historial **precargado y simulado** (nombre asignado, fecha-hora y probabilidad ilustrativa); no se generan resultados reales. Las cuentas registradas solo existen en memoria. El tema oscuro es el predeterminado; la apariencia, el orden del historial y la sesión mock se guardan con `shared_preferences`. La sesión guarda solo nombre y correo, nunca la contraseña, y se elimina al cerrar sesión.
+En modo mock, el acceso usa `demo@nerilum.app` / `Demo1234` y el historial es
+**precargado y simulado**. Las cuentas mock registradas solo existen en memoria.
+Con `AUTH_MODE=supabase`, el acceso y la sesión reales los gestiona el SDK de Supabase.
+Con `API_BASE_URL`, las imágenes JPG/PNG se envían a FastAPI para su clasificación;
+la inferencia depende del modelo disponible en el servidor. La apariencia y el orden
+se conservan con `shared_preferences`; la sesión mock guarda solo nombre/correo,
+nunca la contraseña. Los datos mock no autentican ni sustituyen a una sesión real.
 
 ## Organización
 
 Para preparar y activar el acceso real posteriormente, consulta [SUPABASE_SETUP.md](SUPABASE_SETUP.md).
 El modo mock sigue siendo el predeterminado; `AUTH_MODE=supabase` selecciona el repositorio real.
+Para conectar análisis e historial a FastAPI local o publicado, consulta
+[API_SETUP.md](API_SETUP.md). `API_BASE_URL` selecciona la dirección del backend,
+independientemente de la URL de Supabase.
 
 - `lib/presentation/views/`: pantallas y navegación, que observan `ChangeNotifier`.
 - `lib/presentation/viewmodels/`: estado y acciones de autenticación, análisis y apariencia.

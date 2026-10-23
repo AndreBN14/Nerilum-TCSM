@@ -94,8 +94,8 @@ class ProfileView extends StatelessWidget {
             Text(
               'Nerilum · Prototipo académico\nVersión 1.0.0\n\n'
               'Explora el diseño de una herramienta de clasificación de imágenes cerebrales. '
-              '${AppScope.of(context).usesRemoteAnalysis ? 'La clasificación se solicita al backend. Los resultados son orientativos '
-                        'y no constituyen diagnósticos médicos.' : 'El modelo de IA todavía no está conectado; no produce resultados ni diagnósticos médicos.'}',
+              '${AppScope.of(context).usesRemoteAnalysis ? 'El análisis utiliza el backend configurado y requiere un modelo disponible. '
+                        'Los resultados son orientativos y no constituyen diagnósticos médicos.' : 'El modelo de IA todavía no está conectado; no produce resultados ni diagnósticos médicos.'}',
             ),
           ),
         ),

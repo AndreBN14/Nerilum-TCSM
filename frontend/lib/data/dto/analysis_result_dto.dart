@@ -19,18 +19,18 @@ class AnalysisResultDto {
         probability > 1 ||
         (name != null && name is! String) ||
         scores is! Map<String, dynamic>) {
-      throw const FormatException('Resultado no válido.');
+      throw const FormatException('Resultado de análisis no válido.');
     }
     final values = <String, double>{};
     for (final entry in scores.entries) {
-      final value = entry.value;
-      if (value is! num || !value.isFinite || value < 0 || value > 1) {
+      final score = entry.value;
+      if (score is! num || !score.isFinite || score < 0 || score > 1) {
         throw const FormatException('Puntuaciones no válidas.');
       }
-      values[entry.key] = value.toDouble();
+      values[entry.key] = score.toDouble();
     }
     if (!values.containsKey(category)) {
-      throw const FormatException('Falta la categoría.');
+      throw const FormatException('Falta la categoría en las puntuaciones.');
     }
     return AnalysisResult(
       id: id,

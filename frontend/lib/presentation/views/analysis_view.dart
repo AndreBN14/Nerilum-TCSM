@@ -140,7 +140,7 @@ class AnalysisView extends StatelessWidget {
             TextFormField(
               key: ValueKey(image),
               initialValue: analysisName,
-              enabled: !processing && result == null,
+              enabled: !processing,
               maxLength: 120,
               onChanged: onNameChanged,
               decoration: const InputDecoration(
@@ -171,7 +171,11 @@ class AnalysisView extends StatelessWidget {
           MintButton(
             label: processing
                 ? 'Analizando imagen'
-                : (result == null ? 'Analizar imagen' : 'Análisis completado'),
+                : (result != null
+                      ? 'Análisis completado'
+                      : error == null
+                      ? 'Analizar imagen'
+                      : 'Reintentar análisis'),
             icon: processing ? Icons.hourglass_top : Icons.arrow_forward,
             onPressed: image == null || processing || result != null
                 ? null

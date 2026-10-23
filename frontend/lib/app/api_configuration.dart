@@ -2,6 +2,7 @@ class ApiConfiguration {
   const ApiConfiguration({
     this.baseUrl = const String.fromEnvironment('API_BASE_URL'),
   });
+
   final String baseUrl;
   bool get enabled => baseUrl.trim().isNotEmpty;
 
@@ -13,11 +14,13 @@ class ApiConfiguration {
         uri.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
         uri.hasQuery ||
-        uri.hasFragment ||
-        authMode != 'supabase') {
+        uri.hasFragment) {
       throw StateError(
-        'API_BASE_URL requiere una URL HTTP/HTTPS y AUTH_MODE=supabase.',
+        'API_BASE_URL debe ser una URL HTTP/HTTPS sin credenciales, query ni fragmento.',
       );
+    }
+    if (authMode != 'supabase') {
+      throw StateError('El backend remoto necesita AUTH_MODE=supabase.');
     }
   }
 

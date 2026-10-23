@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/models/account.dart';
@@ -15,17 +14,9 @@ class SupabaseAccountDataSource {
           email: user.email ?? '',
         );
 
-  void _debugPrintAccessToken() {
-    if (!kDebugMode) return;
-    final session = client.auth.currentSession;
-    debugPrint('[Nerilum] Access token: ${session?.accessToken}');
-    debugPrint('[Nerilum] Refresh token: ${session?.refreshToken}');
-  }
-
   Future<Account?> profile() async {
     final user = client.auth.currentUser;
     if (user == null) return null;
-    _debugPrintAccessToken();
     final row = await client
         .from('profiles')
         .select('display_name')

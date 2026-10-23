@@ -37,18 +37,18 @@ class HttpAnalysisDataSource {
     request.followRedirects = false;
     http.Response response;
     try {
-      // Sin reenvíos automáticos: la API desplegada todavía no es idempotente.
+      // Un solo envío HTTP. Los reintentos explícitos conservan Idempotency-Key.
       response = await _client
           .send(request)
           .then(http.Response.fromStream)
           .timeout(timeout);
     } on TimeoutException {
       throw const AnalysisFailure(
-        'El servidor tardó demasiado. Revisa el historial antes de enviar otra vez.',
+        'El servidor tardó demasiado. Revisa el historial antes de reintentar la misma operación.',
       );
     } on http.ClientException {
       throw const AnalysisFailure(
-        'Se perdió la conexión. Revisa el historial antes de enviar otra vez.',
+        'No se pudo completar la conexión. Revisa el historial antes de reintentar.',
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -60,6 +60,7 @@ class HttpAnalysisDataSource {
       throw AnalysisFailure(switch (response.statusCode) {
         401 => 'La sesión no es válida o expiró. Vuelve a iniciar sesión.',
         403 => 'No tienes permiso para realizar esta operación.',
+        409 => 'La operación ya se envió con otro contenido. Selecciona de nuevo la imagen para iniciar otra.',
         413 => 'La imagen supera el tamaño permitido por el servidor.',
         400 ||
         415 ||
@@ -82,8 +83,12 @@ class HttpAnalysisDataSource {
   Future<AnalysisResult> analyze(
     SelectedImage image, {
     String? displayName,
+    String? idempotencyKey,
   }) async {
     final request = http.MultipartRequest('POST', baseUri.resolve('analyses'));
+    if (idempotencyKey != null) {
+      request.headers['Idempotency-Key'] = idempotencyKey;
+    }
     if (displayName != null && displayName.trim().isNotEmpty) {
       request.fields['display_name'] = displayName.trim();
     }
@@ -101,11 +106,13 @@ class HttpAnalysisDataSource {
   }
 
   Future<List<AnalysisResult>> history() async {
+    // El contrato de dominio actual trabaja con una lista completa. Recorrer
+    // todas las páginas evita ordenar solo una fracción del historial en la UI.
     final records = <String, AnalysisResult>{};
     var offset = 0;
     while (true) {
-      // Compatibilidad con Render actual: solo limit/offset; ordenar la lista
-      // completa en el ViewModel conserva las cuatro preferencias existentes.
+      // El orden por defecto del backend es newest. No exigir parámetros nuevos
+      // permite leer el historial tanto antes como después del despliegue.
       final uri = baseUri
           .resolve('analyses')
           .replace(queryParameters: {'limit': '100', 'offset': '$offset'});

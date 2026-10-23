@@ -48,7 +48,7 @@ Future<void> main() async {
           SupabaseAccountDataSource(Supabase.instance.client, config.redirect),
         ),
         analysis: analysisSource == null
-            ? null
+            ? const UnconfiguredAnalysisRepository()
             : HttpAnalysisRepository(analysisSource),
         usesRemoteAnalysis: analysisSource != null,
         onDispose: analysisSource?.close,

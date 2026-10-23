@@ -50,7 +50,7 @@ def create_app(
             CORSMiddleware,
             allow_origins=config.cors_origins,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Authorization", "Content-Type"],
+            allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
         )
     register_error_handlers(app)
     app.include_router(health.router, prefix="/api/v1")

@@ -34,6 +34,7 @@ class _Analysis implements AnalysisRepository {
   Future<AnalysisResult> analyze(
     SelectedImage image, {
     String? displayName,
+    String? idempotencyKey,
   }) async {
     expect(image.name, 'prueba.png');
     return result;

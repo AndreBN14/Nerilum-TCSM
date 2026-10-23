@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+from threading import Event, get_ident
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from conftest import (
@@ -114,6 +118,59 @@ def test_create_valid_png(stub, keypair):
     assert body["id"].startswith("an_")
     assert body["created_at"]
     assert body["disclaimer"]
+
+
+_VALID_SCORES = {
+    "NonDemented": 0.5, "VeryMildDemented": 0.2,
+    "MildDemented": 0.2, "ModerateDemented": 0.1,
+}
+
+
+@pytest.mark.parametrize("raw", [
+    {}, None, [], "not-a-distribution",
+    {key: value for key, value in _VALID_SCORES.items() if key != "MildDemented"},
+    {**_VALID_SCORES, "UnknownClass": 0.1},
+    *[{**_VALID_SCORES, "NonDemented": value} for value in (
+        float("nan"), float("inf"), float("-inf"),
+        -0.00000001, 1.00000001, "0.5", True,
+    )],
+    {key: 0.1 for key in _VALID_SCORES},
+    {key: 0.0 for key in _VALID_SCORES},
+])
+def test_invalid_model_output_never_reaches_repository(stub, keypair, raw):
+    class InvalidInference(FakeInference):
+        def analyze(self, image):
+            return raw
+
+    with _app(stub, inference=InvalidInference()) as client:
+        repo = client.app.state.services.analyses
+        create = Mock(wraps=repo.create)
+        repo.create = create
+        headers = _bearer(sign_token(keypair))
+        response = client.post("/api/v1/analyses", headers=headers,
+                               files=_png_download(_png_bytes()))
+        history = client.get("/api/v1/analyses", headers=headers)
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "model_unavailable"
+    create.assert_not_called()
+    assert history.status_code == 200
+    assert history.json()["total"] == 0
+
+
+def test_complete_record_is_validated_before_insert(stub, keypair):
+    inference = FakeInference()
+    inference.model_info = SimpleNamespace(name=None, version="test", dataset="test")
+    with _app(stub, inference=inference) as client:
+        repo = client.app.state.services.analyses
+        create = Mock(wraps=repo.create)
+        repo.create = create
+        headers = _bearer(sign_token(keypair))
+        response = client.post("/api/v1/analyses", headers=headers,
+                               files=_png_download(_png_bytes()))
+        history = client.get("/api/v1/analyses", headers=headers)
+    assert response.status_code == 500
+    create.assert_not_called()
+    assert history.json()["total"] == 0
 
 
 def test_rejects_text_body(stub, keypair):
@@ -340,6 +397,104 @@ def test_list_empty_and_pagination(stub, keypair, tmp_path):
     assert page2.json()["total"] == 3
     assert invalid.status_code == 422
     assert invalid.json()["error"]["code"] == "validation_error"
+
+
+@pytest.mark.parametrize("sort,expected", [
+    ("newest", ["an_d", "an_e", "an_b", "an_a", "an_c"]),
+    ("oldest", ["an_c", "an_a", "an_b", "an_e", "an_d"]),
+    ("nameAZ", ["an_b", "an_c", "an_e", "an_a", "an_d"]),
+    ("probability", ["an_b", "an_c", "an_e", "an_a", "an_d"]),
+])
+def test_history_orders_before_pagination_and_preserves_owner(stub, keypair, sort, expected):
+    from app.services.analyses import AnalysisRecord
+
+    alice = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    bob = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    data = [
+        ("an_a", "Zeta", "10", 0.2),
+        ("an_b", "alfa", "11", 0.9),
+        ("an_c", "Alfa", "09", 0.9),
+        ("an_d", None, "12", 0.1),
+        ("an_e", "beta", "11", 0.5),
+    ]
+    with _app(stub) as client:
+        repo = client.app.state.services.analyses
+        for record_id, name, hour, probability in data:
+            repo.create(AnalysisRecord(
+                id=record_id, account_id=alice, category="NonDemented",
+                probability=probability, scores={c.value: 0.25 for c in Category},
+                display_name=name, created_at=f"2026-10-12T{hour}:00:00Z",
+                model_name="fake", model_version="test", model_dataset="test",
+            ))
+        repo.create(AnalysisRecord(
+            id="other_user", account_id=bob, category="NonDemented",
+            probability=1, scores={c.value: 0.25 for c in Category},
+            model_name="fake", model_version="test", model_dataset="test",
+        ))
+        headers = _bearer(sign_token(keypair, sub=alice))
+        response = client.get("/api/v1/analyses", headers=headers,
+                              params={"sort": sort})
+        page = client.get("/api/v1/analyses", headers=headers,
+                          params={"sort": sort, "limit": 2, "offset": 1})
+    assert response.status_code == 200
+    assert response.json()["total"] == 5
+    assert [row["id"] for row in response.json()["items"]] == expected
+    assert page.status_code == 200
+    assert [row["id"] for row in page.json()["items"]] == expected[1:3]
+
+
+def test_unknown_sort_rejected_without_executing_sql(stub, keypair):
+    headers = _bearer(sign_token(keypair))
+    with _app(stub) as client:
+        bad = client.get("/api/v1/analyses", headers=headers,
+                         params={"sort": "created_at; DROP TABLE analyses"})
+        valid = client.get("/api/v1/analyses", headers=headers)
+    assert bad.status_code == 422
+    assert valid.status_code == 200
+
+
+def test_inference_and_persistence_do_not_block_event_loop(stub, keypair, monkeypatch):
+    from app.routes import analyses as routes
+    from app.services.analyses import SqliteAnalysisRepository
+
+    entered = Event()
+    release = Event()
+    thread_ids = {}
+    original_read = routes._read_upload
+    original_create = SqliteAnalysisRepository.create
+
+    async def read_upload(*args):
+        thread_ids["event_loop"] = get_ident()
+        return await original_read(*args)
+
+    def create(repo, record):
+        thread_ids["database"] = get_ident()
+        return original_create(repo, record)
+
+    class SlowInference(FakeInference):
+        def analyze(self, image):
+            thread_ids["inference"] = get_ident()
+            entered.set()
+            if not release.wait(10):
+                raise RuntimeError("La prueba no liberó la inferencia.")
+            return super().analyze(image)
+
+    monkeypatch.setattr(routes, "_read_upload", read_upload)
+    monkeypatch.setattr(SqliteAnalysisRepository, "create", create)
+    with _app(stub, inference=SlowInference()) as client:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pending = executor.submit(client.post, "/api/v1/analyses",
+                headers=_bearer(sign_token(keypair)),
+                files=_png_download(_png_bytes()))
+            try:
+                assert entered.wait(5)
+                health = executor.submit(client.get, "/api/v1/health")
+                assert health.result(timeout=3).status_code == 200
+            finally:
+                release.set()
+            assert pending.result(timeout=5).status_code == 201
+    assert thread_ids["inference"] != thread_ids["event_loop"]
+    assert thread_ids["database"] != thread_ids["event_loop"]
 
 
 def test_get_missing_analysis_returns_404(stub, keypair):
