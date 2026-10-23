@@ -173,7 +173,9 @@ class AnalysisView extends StatelessWidget {
                 ? 'Analizando imagen'
                 : (result != null
                       ? 'Análisis completado'
-                      : error == null ? 'Analizar imagen' : 'Reintentar análisis'),
+                      : error == null
+                      ? 'Analizar imagen'
+                      : 'Reintentar análisis'),
             icon: processing ? Icons.hourglass_top : Icons.arrow_forward,
             onPressed: image == null || processing || result != null
                 ? null

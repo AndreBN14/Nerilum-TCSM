@@ -107,9 +107,16 @@ Para publicar Flutter web, autorizar también su origen exacto en CORS.
   para reintentar con `Idempotency-Key`. Seleccionar otra imagen o cambiar el nombre
   inicia otra operación. Esa clave se conserva en memoria, no entre reinicios.
 - Un timeout no garantiza que el servidor no haya guardado; reintentar con la misma
-  operación evita duplicados. Se envía la misma clave hasta que cambie la operación.
+  operación evita duplicados **cuando el backend corregido está desplegado y su
+  esquema de idempotencia está aplicado**. Una API antigua puede ignorar el encabezado.
+  Se envía la misma clave hasta que cambie la operación; no hay reenvíos automáticos.
+  El timeout predeterminado es de 120 segundos. Tras un resultado exitoso se bloquea
+  el envío de esa operación; seleccionar otra imagen o cambiar su nombre inicia otra,
+  no renombra un registro ya guardado.
 - El historial usa las páginas del backend (100 por solicitud), las recorre hasta
-  completar la lista y conserva el orden local existente. No hay todavía carga
+  completar la lista y conserva el orden local existente. Utiliza el orden de fecha
+  predeterminado del servidor sin exigir el parámetro `sort`, para mantener
+  compatibilidad durante el despliegue. No hay todavía carga
   incremental por scroll; esa mejora requerirá ampliar el contrato de dominio paginado.
 - Los errores de red, sesión, modelo y respuesta malformada son visibles y permiten
   reintentar. La app no los convierte en resultados ni en un historial vacío exitoso.
