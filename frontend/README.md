@@ -27,6 +27,9 @@ independientemente de la URL de Supabase.
 
 Consulta [ARCHITECTURE.md](ARCHITECTURE.md) para el flujo completo y cómo integrar una API.
 
+Para compilar, firmar y publicar versiones oficiales de Android con GitHub Actions, consulta
+[RELEASE.md](RELEASE.md).
+
 Para verificar cambios: `flutter analyze` y `flutter test`. Para generar el instalable Android desde `frontend/`: `flutter build apk --release`; la salida está en `build/app/outputs/flutter-apk/app-release.apk`.
 
 ## Abrir como web desde Android Studio
