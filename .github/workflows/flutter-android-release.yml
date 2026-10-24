@@ -1,0 +1,356 @@
+name: Flutter Android Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flutter-android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build y verificación de firma
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
+    steps:
+      - name: Checkout con historial completo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Validar etiqueta semver, pertenencia a main y versionCode
+        if: github.ref_type == 'tag'
+        id: version
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+
+          # 1) Formato semver estricto: vMAJOR.MINOR.PATCH, sin ceros a la izquierda ni sufijos.
+          if [[ ! "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Etiqueta '${TAG}' no válida. Se espera exactamente vMAJOR.MINOR.PATCH (sin ceros a la izquierda, sin sufijos como -rc1)."
+            exit 1
+          fi
+          WITHOUT_V="${TAG#v}"
+          MAJOR="${WITHOUT_V%%.*}"
+          AFTER_MAJOR="${WITHOUT_V#*.}"
+          MINOR="${AFTER_MAJOR%%.*}"
+          PATCH="${AFTER_MAJOR#*.}"
+
+          # 2) Límites explícitos.
+          if (( MAJOR < 1 || MAJOR > 2099 )); then
+            echo "::error::MAJOR=${MAJOR} fuera del rango permitido [1, 2099]."
+            exit 1
+          fi
+          if (( MINOR > 999 )); then
+            echo "::error::MINOR=${MINOR} excede 999; la fórmula de versionCode perdería unicidad."
+            exit 1
+          fi
+          if (( PATCH > 999 )); then
+            echo "::error::PATCH=${PATCH} excede 999; la fórmula de versionCode perdería unicidad."
+            exit 1
+          fi
+
+          # 3) versionCode = MAJOR * 1_000_000 + MINOR * 1_000 + PATCH
+          VERSION_CODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
+          if (( VERSION_CODE < 1 || VERSION_CODE > 2100000000 )); then
+            echo "::error::versionCode calculado (${VERSION_CODE}) excede el límite de Android (2100000000)."
+            exit 1
+          fi
+
+          # 4) El commit de la etiqueta debe pertenecer a la historia de origin/main.
+          if ! git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+            echo "::error::No se pudo verificar la referencia origin/main; se detiene sin publicar."
+            exit 1
+          fi
+          if ! TAG_COMMIT="$(git rev-list -n1 "refs/tags/${TAG}" 2>/dev/null)" || [[ -z "${TAG_COMMIT}" ]]; then
+            echo "::error::No se pudo resolver el commit de la etiqueta ${TAG}; se detiene sin publicar."
+            exit 1
+          fi
+          if ! EVENT_COMMIT="$(git rev-list -n1 "${GITHUB_SHA}" 2>/dev/null)" || [[ "${EVENT_COMMIT}" != "${TAG_COMMIT}" ]]; then
+            echo "::error::El commit del evento no coincide con el commit de la etiqueta; se detiene sin publicar."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${TAG_COMMIT}" refs/remotes/origin/main; then
+            echo "::error::La etiqueta ${TAG} no apunta a un commit de la historia de main; se detiene sin publicar."
+            exit 1
+          fi
+
+          # 5) No reemplazar Releases existentes.
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::Ya existe un Release para ${TAG}. Los Releases existentes no se reemplazan."
+            exit 1
+          fi
+
+          # 6) Monotonía y colisiones contra todos los tags semver reconocidos.
+          MAX_PREV=1
+          while IFS= read -r EXISTING_TAG; do
+            [[ -z "${EXISTING_TAG}" ]] && continue
+            [[ "${EXISTING_TAG}" == "${TAG}" ]] && continue
+            if [[ "${EXISTING_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              EM="${BASH_REMATCH[1]}"
+              EN="${BASH_REMATCH[2]}"
+              EP="${BASH_REMATCH[3]}"
+              EC=$(( EM * 1000000 + EN * 1000 + EP ))
+              if (( EC > MAX_PREV )); then MAX_PREV="${EC}"; fi
+            fi
+          done < <(git tag --list 'v*')
+
+          if (( VERSION_CODE <= MAX_PREV )); then
+            echo "::error::versionCode ${VERSION_CODE} no es estrictamente mayor que el máximo ya reconocido (${MAX_PREV}). Elige una versión superior; no se reutilizan números de compilación."
+            exit 1
+          fi
+
+          {
+            echo "version_name=${WITHOUT_V}"
+            echo "version_code=${VERSION_CODE}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Validación OK: tag=${TAG} commit=${TAG_COMMIT:0:12} versionName=${WITHOUT_V} versionCode=${VERSION_CODE} maxPrevio=${MAX_PREV}"
+
+      - name: Verificar Variables de producción (sin imprimir valores)
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          AUTH_REDIRECT_URL: ${{ vars.AUTH_REDIRECT_URL }}
+        run: |
+          set -euo pipefail
+          fail=0
+          report_required() {
+            if [[ -z "$2" ]]; then
+              echo "::error::Variable $1 no está configurada en GitHub Actions Variables."
+              fail=1
+            else
+              echo "$1: presente (longitud ${#2})"
+            fi
+          }
+          report_required API_BASE_URL "${API_BASE_URL}"
+          report_required SUPABASE_URL "${SUPABASE_URL}"
+          report_required SUPABASE_PUBLISHABLE_KEY "${SUPABASE_PUBLISHABLE_KEY}"
+          if [[ -n "${AUTH_REDIRECT_URL}" ]]; then
+            echo "AUTH_REDIRECT_URL: presente (longitud ${#AUTH_REDIRECT_URL})"
+          else
+            echo "AUTH_REDIRECT_URL: no configurada; se usará el valor por defecto de la app (app.nerilum://auth-callback)."
+          fi
+          [[ "${fail}" -eq 0 ]] || exit 1
+
+          if [[ ! "${API_BASE_URL}" =~ ^https?://[^[:space:]]+$ ]]; then
+            echo "::error::API_BASE_URL debe ser una URL http(s) válida."
+            exit 1
+          fi
+          if [[ ! "${SUPABASE_URL}" =~ ^https://[^[:space:]]+$ ]]; then
+            echo "::error::SUPABASE_URL debe ser una URL https válida."
+            exit 1
+          fi
+          if (( ${#SUPABASE_PUBLISHABLE_KEY} < 20 )); then
+            echo "::error::SUPABASE_PUBLISHABLE_KEY no parece una clave válida."
+            exit 1
+          fi
+
+      - name: Preparar firma de producción temporal
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS; do
+            value="${!name}"
+            if [[ -z "${value}" ]]; then
+              echo "::error::Falta el secreto ${name}."
+              fail=1
+            else
+              echo "${name}: presente"
+            fi
+          done
+          [[ "${fail}" -eq 0 ]] || exit 1
+
+          # ANDROID_KEY_PASSWORD es opcional: si no existe, se usa la contraseña del keystore.
+          KEY_PASSWORD_VALUE="${ANDROID_KEY_PASSWORD:-${ANDROID_KEYSTORE_PASSWORD}}"
+
+          SIGNING_DIR="${RUNNER_TEMP}/release-signing"
+          mkdir -p "${SIGNING_DIR}"
+          chmod 700 "${SIGNING_DIR}"
+          if ! printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "${SIGNING_DIR}/release.keystore" 2>/dev/null; then
+            echo "::error::No se pudo decodificar ANDROID_KEYSTORE_BASE64."
+            rm -rf "${SIGNING_DIR}"
+            exit 1
+          fi
+          chmod 600 "${SIGNING_DIR}/release.keystore"
+
+          # Comprobación interna del keystore sin volcar su contenido ni las contraseñas.
+          if ! keytool -list -keystore "${SIGNING_DIR}/release.keystore" \
+              -storepass "${ANDROID_KEYSTORE_PASSWORD}" \
+              -alias "${ANDROID_KEY_ALIAS}" > /dev/null 2>&1; then
+            echo "::error::El keystore no es legible con las credenciales ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS proporcionadas."
+            rm -rf "${SIGNING_DIR}"
+            exit 1
+          fi
+
+          umask 077
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${SIGNING_DIR}/release.keystore" \
+            "${ANDROID_KEYSTORE_PASSWORD}" \
+            "${ANDROID_KEY_ALIAS}" \
+            "${KEY_PASSWORD_VALUE}" \
+            > android/key.properties
+          chmod 600 android/key.properties
+          echo "Firma de producción preparada en ubicación temporal (no se registran valores)."
+
+          
+      - name: Configurar Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Configurar Flutter 3.47.6 (versión del proyecto)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.6"
+          channel: stable
+          cache: true
+
+      - name: Caché de Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('frontend/android/gradle/wrapper/gradle-wrapper.properties', 'frontend/android/build.gradle.kts', 'frontend/android/app/build.gradle.kts', 'frontend/android/settings.gradle.kts', 'frontend/android/gradle.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
+      - name: Compilar APK de producción
+        env:
+          API_BASE_URL: ${{ vars.API_BASE_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          AUTH_REDIRECT_URL: ${{ vars.AUTH_REDIRECT_URL }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          REDIRECT="${AUTH_REDIRECT_URL:-app.nerilum://auth-callback}"
+          flutter build apk --release \
+            --dart-define=AUTH_MODE=supabase \
+            --dart-define=API_BASE_URL="${API_BASE_URL}" \
+            --dart-define=SUPABASE_URL="${SUPABASE_URL}" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="${SUPABASE_PUBLISHABLE_KEY}" \
+            --dart-define=AUTH_REDIRECT_URL="${REDIRECT}" \
+            --build-name="${VERSION_NAME}" \
+            --build-number="${VERSION_CODE}"
+
+      - name: Verificar APK firmado con el certificado de producción
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+          if [[ ! -s "${APK}" ]]; then
+            echo "::error::No existe el APK en ${APK} o está vacío."
+            exit 1
+          fi
+
+          # AGP firma con el esquema APK v2/v3; se verifica con apksigner.
+          APKSIGNER="$(ls "${ANDROID_HOME}/build-tools/"*/apksigner 2>/dev/null | sort -V | tail -1 || true)"
+          if [[ -z "${APKSIGNER}" || ! -x "${APKSIGNER}" ]]; then
+            echo "::error::apksigner no está disponible; no se puede verificar la firma del APK."
+            exit 1
+          fi
+          if ! "${APKSIGNER}" verify --print-certs "${APK}" > "${RUNNER_TEMP}/apk-certs.txt" 2>&1; then
+            echo "::error::La verificación de firma del APK falló (APK sin firmar o corrupto)."
+            exit 1
+          fi
+
+          APK_FP="$(grep -m1 -i 'certificate SHA-256 digest:' "${RUNNER_TEMP}/apk-certs.txt" | awk '{print $NF}' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          KS_FP="$(keytool -list -v \
+            -keystore "${RUNNER_TEMP}/release-signing/release.keystore" \
+            -storepass "${ANDROID_KEYSTORE_PASSWORD}" \
+            -alias "${ANDROID_KEY_ALIAS}" 2>/dev/null \
+            | grep -m1 -i 'SHA256:' | tr -d '[:space:]' | sed -e 's/^SHA256://' -e 's/://g' | tr '[:upper:]' '[:lower:]')"
+          rm -f "${RUNNER_TEMP}/apk-certs.txt"
+          if [[ -z "${APK_FP}" || -z "${KS_FP}" || "${APK_FP}" != "${KS_FP}" ]]; then
+            echo "::error::El certificado del APK NO coincide con el keystore de producción. Publicación detenida."
+            exit 1
+          fi
+          echo "Certificado del APK: coincide con el keystore de producción."
+          cp "${APK}" nerilum.apk
+          ls -l nerilum.apk
+
+      - name: Subir APK como artefacto
+        uses: actions/upload-artifact@v7
+        with:
+          name: nerilum-apk
+          path: frontend/nerilum.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Limpiar archivos temporales de firma
+        if: always()
+        run: |
+          rm -rf "${RUNNER_TEMP}/release-signing"
+          rm -f android/key.properties
+          echo "Archivos temporales de firma eliminados."
+
+  release:
+    name: Crear GitHub Release
+    timeout-minutes: 10
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Descargar APK verificado
+        uses: actions/download-artifact@v8
+        with:
+          name: nerilum-apk
+          path: dist
+
+      - name: Verificar artefacto y ausencia de Release previo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s dist/nerilum.apk ]]; then
+            echo "::error::Artefacto dist/nerilum.apk ausente o vacío."
+            exit 1
+          fi
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "::error::Ya existe un Release para ${GITHUB_REF_NAME}; los Releases existentes no se reemplazan."
+            exit 1
+          fi
+
+      - name: Publicar Release con nerilum.apk
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/nerilum.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
