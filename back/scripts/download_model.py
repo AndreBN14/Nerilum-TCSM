@@ -44,8 +44,7 @@ BACK_ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_FILENAME = "nerilum-alzheimer-mri-classifier.onnx"
 DEFAULT_URL = (
-    "https://github.com/AndreBN14/Nerilum-TCSM/releases/latest/download/"
-    f"{DEFAULT_FILENAME}"
+    "https://github.com/AndreBN14/Nerilum-TCSM/releases/download/v1.0.0/"f"{DEFAULT_FILENAME}"
 )
 DEFAULT_MODEL_DIR = "app/models"
 CHUNK_SIZE = 1024 * 1024
