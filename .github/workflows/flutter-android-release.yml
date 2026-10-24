@@ -2,13 +2,8 @@ name: Flutter Android Release
 
 on:
   push:
-    # PRUEBA: cambia el nombre por tu rama de pruebas y quita este bloque al terminar.
-    branches:
-      - "prueba-local-carlos"
     tags:
       - "v*.*.*"
-  # PRUEBA: permite lanzarlo a mano desde Actions -> Run workflow.
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,6 +15,7 @@ concurrency:
 jobs:
   build:
     name: Build y verificación de firma
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,15 +23,14 @@ jobs:
       run:
         working-directory: frontend
     outputs:
-      version_name: ${{ steps.version.outputs.version_name || steps.version_test.outputs.version_name }}
-      version_code: ${{ steps.version.outputs.version_code || steps.version_test.outputs.version_code }}
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
     steps:
       - name: Checkout con historial completo
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      # Solo para etiquetas: validación estricta (sin cambios respecto al original).
       - name: Validar etiqueta semver, pertenencia a main y versionCode
         if: github.ref_type == 'tag'
         id: version
@@ -106,6 +101,7 @@ jobs:
           MAX_PREV=1
           while IFS= read -r EXISTING_TAG; do
             [[ -z "${EXISTING_TAG}" ]] && continue
+            [[ "${EXISTING_TAG}" == "${TAG}" ]] && continue
             if [[ "${EXISTING_TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
               EM="${BASH_REMATCH[1]}"
               EN="${BASH_REMATCH[2]}"
@@ -125,19 +121,6 @@ jobs:
             echo "version_code=${VERSION_CODE}"
           } >> "${GITHUB_OUTPUT}"
           echo "Validación OK: tag=${TAG} commit=${TAG_COMMIT:0:12} versionName=${WITHOUT_V} versionCode=${VERSION_CODE} maxPrevio=${MAX_PREV}"
-
-      # Solo para ramas / ejecución manual: versión ficticia, NO es una versión oficial.
-      - name: Versión de prueba (solo ramas)
-        if: github.ref_type != 'tag'
-        id: version_test
-        working-directory: .
-        run: |
-          set -euo pipefail
-          {
-            echo "version_name=0.0.1"
-            echo "version_code=1"
-          } >> "${GITHUB_OUTPUT}"
-          echo "Modo PRUEBA en rama '${GITHUB_REF_NAME}': versionName=0.0.1 versionCode=1 (no se publicará Release)."
 
       - name: Verificar Variables de producción (sin imprimir valores)
         env:
@@ -178,37 +161,6 @@ jobs:
             echo "::error::SUPABASE_PUBLISHABLE_KEY no parece una clave válida."
             exit 1
           fi
-
-      - name: Configurar Java 21
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Configurar Flutter 3.47.6 (versión del proyecto)
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.47.6"
-          channel: stable
-          cache: true
-
-      - name: Caché de Gradle
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('frontend/android/gradle/wrapper/gradle-wrapper.properties', 'frontend/android/build.gradle.kts', 'frontend/android/app/build.gradle.kts', 'frontend/android/settings.gradle.kts', 'frontend/android/gradle.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
-
-      - name: flutter pub get
-        run: flutter pub get
-
-      - name: flutter analyze
-        run: flutter analyze
-
-      - name: flutter test
-        run: flutter test
 
       - name: Preparar firma de producción temporal
         env:
@@ -262,14 +214,46 @@ jobs:
           chmod 600 android/key.properties
           echo "Firma de producción preparada en ubicación temporal (no se registran valores)."
 
+          
+      - name: Configurar Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Configurar Flutter 3.47.6 (versión del proyecto)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.6"
+          channel: stable
+          cache: true
+
+      - name: Caché de Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('frontend/android/gradle/wrapper/gradle-wrapper.properties', 'frontend/android/build.gradle.kts', 'frontend/android/app/build.gradle.kts', 'frontend/android/settings.gradle.kts', 'frontend/android/gradle.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test
+
       - name: Compilar APK de producción
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
           AUTH_REDIRECT_URL: ${{ vars.AUTH_REDIRECT_URL }}
-          VERSION_NAME: ${{ steps.version.outputs.version_name || steps.version_test.outputs.version_name }}
-          VERSION_CODE: ${{ steps.version.outputs.version_code || steps.version_test.outputs.version_code }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: |
           set -euo pipefail
           REDIRECT="${AUTH_REDIRECT_URL:-app.nerilum://auth-callback}"
@@ -335,9 +319,9 @@ jobs:
           rm -f android/key.properties
           echo "Archivos temporales de firma eliminados."
 
-  # Solo se ejecuta con etiquetas: en ramas / ejecución manual NO crea ningún Release.
   release:
     name: Crear GitHub Release
+    timeout-minutes: 10
     needs: build
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
