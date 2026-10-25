@@ -32,6 +32,14 @@ Para compilar, firmar y publicar versiones oficiales de Android con GitHub Actio
 
 Para verificar cambios: `flutter analyze` y `flutter test`. Para generar el instalable Android desde `frontend/`: `flutter build apk --release`; la salida está en `build/app/outputs/flutter-apk/app-release.apk`.
 
+El nuevo flujo de análisis remoto utiliza `preview → guardar explícitamente`.
+No aparecerá un resultado en el historial hasta pulsar Guardar; descartar no
+genera ningún registro. Requiere desplegar primero el backend v2 y configurar
+`ANALYSIS_PROOF_SECRET` en Render. Los APK anteriores mantienen su ruta legada.
+Historial y Detalle tienen vistas propias; el PDF se genera localmente desde
+un registro guardado. La imagen solo acompaña al PDF si sigue en memoria durante
+la sesión. La fuente Lato empaquetada para PDF está licenciada en `assets/OFL-Lato.txt`.
+
 ## Abrir como web desde Android Studio
 
 1. Abre la carpeta **`frontend/`** como proyecto en Android Studio (con los plugins Flutter y Dart instalados).

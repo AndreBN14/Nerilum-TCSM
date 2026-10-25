@@ -5,6 +5,7 @@ import '../data/datasources/mock_account_data_source.dart';
 import '../data/datasources/mock_session_data_source.dart';
 import '../data/datasources/mock_analysis_data_source.dart';
 import '../data/repositories/local_appearance_repository.dart';
+import '../data/repositories/pdf_report_repository.dart';
 import '../data/repositories/local_image_repository.dart';
 import '../data/repositories/local_history_sort_repository.dart';
 import '../data/repositories/mock_account_repository.dart';
@@ -12,6 +13,9 @@ import '../data/repositories/mock_analysis_repository.dart';
 import '../domain/models/appearance.dart';
 import '../domain/repositories/account_repository.dart';
 import '../domain/repositories/analysis_repository.dart';
+import '../domain/repositories/preview_repository.dart';
+import '../domain/usecases/preview_use_cases.dart';
+import '../domain/usecases/generate_report.dart';
 import '../domain/repositories/appearance_repository.dart';
 import '../domain/repositories/image_repository.dart';
 import '../domain/repositories/history_sort_repository.dart';
@@ -23,6 +27,7 @@ import '../domain/usecases/history_sort_use_cases.dart';
 import '../presentation/viewmodels/appearance_view_model.dart';
 import '../presentation/viewmodels/auth_view_model.dart';
 import '../presentation/viewmodels/main_view_model.dart';
+import '../presentation/viewmodels/report_view_model.dart';
 
 // Punto de composición: cambiar una implementación no cambia las vistas.
 class AppDependencies {
@@ -52,6 +57,10 @@ class AppDependencies {
           const MockAnalysisDataSource(),
           accountRepository,
         );
+    final PreviewRepository? previewRepository =
+        analysisRepository is PreviewRepository
+        ? analysisRepository as PreviewRepository
+        : null;
     final sortRepository =
         historySort ?? LocalHistorySortRepository(LocalHistorySortDataSource());
     final appearanceRepository =
@@ -69,6 +78,12 @@ class AppDependencies {
     mainViewModel = MainViewModel(
       selectImage: SelectImage(imageRepository),
       analyzeImage: AnalyzeImage(analysisRepository),
+      previewImage: previewRepository == null
+          ? null
+          : PreviewImage(previewRepository),
+      saveAnalysis: previewRepository == null
+          ? null
+          : SaveAnalysis(previewRepository),
       loadHistory: LoadHistory(analysisRepository),
       loadHistorySort: LoadHistorySort(sortRepository),
       saveHistorySort: SaveHistorySort(sortRepository),
@@ -102,6 +117,9 @@ class AppDependencies {
     registerAccount: RegisterAccount(accountRepository),
     resendConfirmation: ResendConfirmation(accountRepository),
   );
+
+  ReportViewModel createReportViewModel() =>
+      ReportViewModel(GenerateReport(const PdfReportRepository()));
 
   void dispose() {
     appearanceViewModel.dispose();

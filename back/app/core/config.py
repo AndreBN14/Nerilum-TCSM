@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     retry_after_seconds: int = Field(default=5, ge=1)
     seed_demo: bool = False
     seed_demo_account_id: UUID | None = None
+    analysis_proof_secret: str = ""
 
     @property
     def use_postgres(self) -> bool:

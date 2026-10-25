@@ -80,6 +80,14 @@ permiso para crear y eliminar esos esquemas. Sin esa variable se omiten las prue
 | POST | `/api/v1/analyses` | Bearer | Sube una imagen y guarda el análisis. |
 | GET | `/api/v1/analyses` | Bearer | Historial paginado del usuario. |
 | GET | `/api/v1/analyses/{id}` | Bearer | Detalle de un análisis propio. |
+| POST | `/api/v1/analyses/preview` | Bearer | Inferencia sin insertar en el historial. |
+| POST | `/api/v1/analyses/save` | Bearer | Guarda un resultado previsualizado y firmado. |
+
+El flujo explícito `preview → save` se documenta en
+[`ANALYSIS_SAVE_V2.md`](ANALYSIS_SAVE_V2.md). El POST existente que infiere y
+guarda en una operación se mantiene para APK anteriores. Las rutas nuevas
+requieren `ANALYSIS_PROOF_SECRET` en Render; si falta, responden 503 sin afectar
+el flujo antiguo. No se requieren migraciones SQL adicionales para este cambio.
 
 `POST /api/v1/analyses` es multipart: `file` (JPG/JPEG o PNG, máx. 10 MB) y un
 opcional `display_name` (se recorta; vacío queda en `null`; ≤120 caracteres ya
@@ -203,7 +211,8 @@ threadpool para mantener disponible el event loop durante las operaciones síncr
   resultados. El backend exige ese esquema antes de aceptar solicitudes.
   SQLite añade automáticamente estas columnas e índice en una transacción local.
   Copias de los scripts: `infraestructura/BD/supabase/` desde la raíz del repo.
-  No se han aplicado estas migraciones a ninguna base remota durante la corrección.
+  En Supabase se aplicó únicamente `004_analysis_idempotency.sql` con autorización
+  expresa; no se aplicaron las migraciones `001`–`003`.
 
 - **SQLite** local en `data/nerilum.db` (tabla `analyses`, índice por
   `account_id` + `created_at DESC`). No se almacenan imágenes. El historial
@@ -282,6 +291,7 @@ proceso tienen prioridad.
 | `MAX_IMAGE_PIXELS` | `16777216` | Máximo número de píxeles totales (w*h). El límite de píxeles y el de dimensión se aplican a la vez. |
 | `SEED_DEMO` | `false` | Activa registros demo (solo desarrollo). |
 | `SEED_DEMO_ACCOUNT_ID` | vacío | UUID del usuario que recibe los registros demo. |
+| `ANALYSIS_PROOF_SECRET` | vacío | Secreto del backend (mínimo 32 caracteres) para firmar previsualizaciones; no se comparte con Flutter. |
 
 No guardar claves privilegiadas ni contraseñas en el repositorio. Flutter móvil
 no depende de CORS; la configuración del backend no activa Supabase en Flutter.

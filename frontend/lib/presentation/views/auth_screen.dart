@@ -90,8 +90,12 @@ class _AuthScreenState extends State<AuthScreen> {
     final loggedIn = await _viewModel!.login(_email.text, _password.text);
     if (!mounted) return;
     if (loggedIn) {
-      AppScope.of(context).mainViewModel.refreshHistory();
-      Navigator.of(context).pushNamedAndRemoveUntil('/app', (_) => false);
+      if (_viewModel!.isDemo) {
+        AppScope.of(context).mainViewModel.refreshHistory();
+        Navigator.of(context).pushNamedAndRemoveUntil('/app', (_) => false);
+      }
+      // En modo Supabase, el listener global de onAuthStateChange realiza
+      // restauración del historial y navegación una sola vez.
     } else if (_viewModel!.error != null) {
       _message(_viewModel!.error!);
     }

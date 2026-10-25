@@ -7,6 +7,9 @@ class AnalysisResult {
     this.isDemo = false,
     this.scores = const {},
     this.id,
+    this.modelName,
+    this.modelVersion,
+    this.modelDataset,
   });
 
   // La categoría debe corresponder exactamente a la etiqueta del modelo.
@@ -19,4 +22,7 @@ class AnalysisResult {
   final bool isDemo;
   final Map<String, double> scores;
   final String? id;
+  final String? modelName;
+  final String? modelVersion;
+  final String? modelDataset;
 }

@@ -111,7 +111,7 @@ class HomeView extends StatelessWidget {
             EmptyHistory(onSelect: onSelectImage)
           else if (analyses.isNotEmpty)
             SizedBox(
-              height: 224,
+              height: 250,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: analyses.length,

@@ -124,6 +124,8 @@ class PostgresAnalysisRepository:
                         )
                         if previous is not None:
                             return previous
+                    if record.fixed_id:
+                        raise ApiException(409, "idempotency_conflict", "El análisis ya fue guardado con otra solicitud.") from None
                     record.id = _new_id()
             else:
                 raise ApiException(500, "internal_error", "No se pudo guardar el análisis.")
