@@ -89,3 +89,20 @@ class AnalysisList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AnalysisPreview(BaseModel):
+    preview_id: str
+    category: Category
+    created_at: IsoTimestamp
+    expires_at: IsoTimestamp
+    probability: Probability
+    scores: Scores
+    model: ModelMetadata
+    save_proof: str
+    disclaimer: str = DISCLAIMER
+
+
+class SaveAnalysisRequest(BaseModel):
+    save_proof: str = Field(min_length=1, max_length=8192)
+    display_name: str | None = None

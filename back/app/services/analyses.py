@@ -70,6 +70,7 @@ class AnalysisRecord:
     created_at: str = field(default_factory=_now_iso)
     idempotency_key: str | None = None
     request_hash: str | None = None
+    fixed_id: bool = False  # Comprobante firmado: el ID no cambia por reintentos.
 
     def __post_init__(self) -> None:
         if (self.idempotency_key is None) != (self.request_hash is None):
@@ -194,6 +195,8 @@ class SqliteAnalysisRepository:
                         )
                         if previous is not None:
                             return previous
+                    if record.fixed_id:
+                        raise ApiException(409, "idempotency_conflict", "El análisis ya fue guardado con otra solicitud.") from None
                     record.id = _new_id()
             else:
                 raise ApiException(500, "internal_error", "No se pudo guardar el análisis.")
