@@ -5,6 +5,7 @@ import 'package:frontend/data/datasources/mock_session_data_source.dart';
 import 'package:frontend/domain/models/history_sort.dart';
 import 'package:frontend/main.dart';
 import 'package:frontend/presentation/widgets/main_components.dart';
+import 'package:frontend/presentation/views/history_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
@@ -127,8 +128,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<ResultCard>(find.byType(ResultCard).first)
-            .result
+            .widget<HistoryView>(find.byType(HistoryView))
+            .records
+            .first
             .displayName,
         'Revisión de imagen',
       );
@@ -139,8 +141,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<ResultCard>(find.byType(ResultCard).first)
-            .result
+            .widget<HistoryView>(find.byType(HistoryView))
+            .records
+            .first
             .displayName,
         'Estudio de referencia',
       );
@@ -154,7 +157,7 @@ void main() {
         'demo@nerilum.app',
       );
 
-      await tester.tap(find.byTooltip('Volver'));
+      await tester.tap(find.byTooltip('Volver a Inicio'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Perfil'));
       await tester.pumpAndSettle();

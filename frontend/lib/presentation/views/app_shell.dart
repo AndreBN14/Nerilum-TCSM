@@ -5,10 +5,9 @@ import '../../domain/models/analysis_result.dart';
 import '../../domain/models/history_sort.dart';
 import '../theme/nerilum_theme.dart';
 import '../widgets/brand_backdrop.dart';
-import '../widgets/history_sort_control.dart';
-import '../widgets/history_status.dart';
-import '../widgets/main_components.dart';
 import 'analysis_view.dart';
+import 'history_view.dart';
+import 'report_detail_page.dart';
 import 'home_view.dart';
 import 'profile_view.dart';
 
@@ -33,45 +32,27 @@ class AppShell extends StatelessWidget {
     model.refreshHistory();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => InfoPage(
-          title: 'Historial completo',
-          child: AnimatedBuilder(
-            animation: model,
-            builder: (context, child) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                HistorySortControl(
-                  value: model.historySort,
-                  onChanged: (sort) => _changeSort(context, sort),
-                ),
-                if (model.analyses.any((record) => record.isDemo)) ...[
-                  const SizedBox(height: 8),
-                  const DemoHistoryNotice(),
-                ],
-                const SizedBox(height: 20),
-                HistoryStatus(
-                  loading: model.historyLoading,
-                  error: model.historyError,
-                  onRetry: model.refreshHistory,
-                ),
-                if (model.analyses.isEmpty &&
-                    !model.historyLoading &&
-                    model.historyError == null)
-                  EmptyHistory(
-                    onSelect: () {
-                      Navigator.of(context).pop();
-                      model.selectFromHome();
-                    },
-                  )
-                else if (model.analyses.isNotEmpty)
-                  for (final record in model.analyses) ...[
-                    ResultCard(
-                      result: record,
-                      onTap: () => _openAnalysis(context, record),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-              ],
+        builder: (routeContext) => AnimatedBuilder(
+          animation: model,
+          builder: (routeContext, _) => HistoryView(
+            records: model.analyses,
+            sort: model.historySort,
+            onSortChanged: (sort) => _changeSort(routeContext, sort),
+            loading: model.historyLoading,
+            error: model.historyError,
+            onRefresh: model.refreshHistory,
+            onOpen: (record) => _openAnalysis(routeContext, record),
+            onSelectImage: () {
+              Navigator.pop(routeContext);
+              model.selectFromHome();
+            },
+            onBack: () => Navigator.pop(routeContext),
+            bottomBar: _MainBottomBar(
+              selected: null,
+              onSelect: (tab) {
+                Navigator.pop(routeContext);
+                model.selectTab(tab);
+              },
             ),
           ),
         ),
@@ -80,29 +61,12 @@ class AppShell extends StatelessWidget {
   }
 
   void _openAnalysis(BuildContext context, AnalysisResult result) {
+    final model = AppScope.of(context).mainViewModel;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => InfoPage(
-          title: 'Detalle del análisis',
-          child: Column(
-            children: [
-              ResultCard(result: result, onTap: null),
-              const SizedBox(height: 20),
-              if (result.isDemo) ...[
-                const DemoHistoryNotice(),
-                const SizedBox(height: 16),
-              ],
-              Text(
-                result.isDemo
-                    ? 'Categoría simulada: ${result.category}'
-                    : 'Categoría del modelo: ${result.category}',
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Resultado orientativo. No constituye un diagnóstico médico.',
-              ),
-            ],
-          ),
+        builder: (routeContext) => ReportDetailPage(
+          result: result,
+          imageBytes: model.imageForRecord(result.id),
         ),
       ),
     );
@@ -158,6 +122,10 @@ class AppShell extends StatelessWidget {
               1 => AnalysisView(
                 image: model.image,
                 result: model.result,
+                preview: model.preview,
+                saving: model.saving,
+                onSave: model.savePreview,
+                onDiscard: model.discardPreview,
                 error: model.error,
                 processing: model.processing,
                 onBack: () => model.selectTab(0),
@@ -186,7 +154,7 @@ class AppShell extends StatelessWidget {
 
 class _MainBottomBar extends StatelessWidget {
   const _MainBottomBar({required this.selected, required this.onSelect});
-  final int selected;
+  final int? selected;
   final ValueChanged<int> onSelect;
 
   @override

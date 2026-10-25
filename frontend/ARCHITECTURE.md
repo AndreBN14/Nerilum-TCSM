@@ -46,7 +46,16 @@ del historial. `AnalysisResultDto` traduce las respuestas del backend a modelos 
 dominio; los widgets no conocen JSON ni tokens. Sin URL se usa el repositorio de
 análisis no configurado en modo real, sin sustituir fallos de API por mocks.
 
-`MainViewModel` conserva un UUID por operación para reintentos idempotentes y
+`MainViewModel` conserva el comprobante firmado para reintentos de guardado y
 expone carga/error del historial. La inferencia depende del modelo cargado en
 el backend y no ocurre en Flutter. El modo mock continúa separado para demos.
 Ver `API_SETUP.md` para conexión local, emulador, teléfono y servidor publicado.
+
+La nueva interfaz real utiliza `PreviewRepository`: previsualiza la inferencia
+sin insertar, conserva el comprobante firmado en memoria y lo guarda solo tras
+la acción del usuario. El registro persistido conserva las puntuaciones y
+metadatos; la imagen se mantiene temporalmente en memoria, se elimina al cerrar
+sesión y nunca se incluye en un PDF histórico si ya no está disponible.
+`ReportRepository → GenerateReport → ReportViewModel` genera un PDF local a
+partir de un registro guardado. Las operaciones reales requieren el backend v2
+documentado en `back/ANALYSIS_SAVE_V2.md`.
