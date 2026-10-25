@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../../domain/models/analysis_result.dart';
+import '../../domain/models/analysis_preview.dart';
 import '../../domain/models/selected_image.dart';
 import '../../domain/repositories/analysis_repository.dart';
 import '../dto/analysis_result_dto.dart';
@@ -101,6 +102,59 @@ class HttpAnalysisDataSource {
     } on FormatException {
       throw const AnalysisFailure(
         'El backend devolvió un resultado no válido. Revisa el historial antes de repetir.',
+      );
+    }
+  }
+
+  Future<AnalysisPreview> preview(SelectedImage image) async {
+    final request = http.MultipartRequest(
+      'POST',
+      baseUri.resolve('analyses/preview'),
+    );
+    request.files.add(
+      http.MultipartFile.fromBytes('file', image.bytes, filename: image.name),
+    );
+    final json = await _send(request);
+    try {
+      final proof = json['save_proof'];
+      final expires = json['expires_at'];
+      final id = json['preview_id'];
+      if (proof is! String ||
+          proof.isEmpty ||
+          expires is! String ||
+          id is! String) {
+        throw const FormatException();
+      }
+      return AnalysisPreview(
+        result: AnalysisResultDto.fromJson({...json, 'id': id}),
+        saveProof: proof,
+        expiresAt: DateTime.parse(expires).toUtc(),
+      );
+    } on FormatException {
+      throw const AnalysisFailure(
+        'El backend devolvió una previsualización no válida.',
+      );
+    }
+  }
+
+  Future<AnalysisResult> savePreview(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) async {
+    final request = http.Request('POST', baseUri.resolve('analyses/save'));
+    request.headers['Content-Type'] = 'application/json';
+    request.body = jsonEncode({
+      'save_proof': preview.saveProof,
+      'display_name': displayName?.trim().isEmpty == true
+          ? null
+          : displayName?.trim(),
+    });
+    final json = await _send(request);
+    try {
+      return AnalysisResultDto.fromJson(json);
+    } on FormatException {
+      throw const AnalysisFailure(
+        'El backend devolvió un guardado no válido. Revisa el historial.',
       );
     }
   }

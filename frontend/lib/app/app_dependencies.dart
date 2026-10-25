@@ -12,6 +12,8 @@ import '../data/repositories/mock_analysis_repository.dart';
 import '../domain/models/appearance.dart';
 import '../domain/repositories/account_repository.dart';
 import '../domain/repositories/analysis_repository.dart';
+import '../domain/repositories/preview_repository.dart';
+import '../domain/usecases/preview_use_cases.dart';
 import '../domain/repositories/appearance_repository.dart';
 import '../domain/repositories/image_repository.dart';
 import '../domain/repositories/history_sort_repository.dart';
@@ -52,6 +54,10 @@ class AppDependencies {
           const MockAnalysisDataSource(),
           accountRepository,
         );
+    final PreviewRepository? previewRepository =
+        analysisRepository is PreviewRepository
+        ? analysisRepository as PreviewRepository
+        : null;
     final sortRepository =
         historySort ?? LocalHistorySortRepository(LocalHistorySortDataSource());
     final appearanceRepository =
@@ -69,6 +75,12 @@ class AppDependencies {
     mainViewModel = MainViewModel(
       selectImage: SelectImage(imageRepository),
       analyzeImage: AnalyzeImage(analysisRepository),
+      previewImage: previewRepository == null
+          ? null
+          : PreviewImage(previewRepository),
+      saveAnalysis: previewRepository == null
+          ? null
+          : SaveAnalysis(previewRepository),
       loadHistory: LoadHistory(analysisRepository),
       loadHistorySort: LoadHistorySort(sortRepository),
       saveHistorySort: SaveHistorySort(sortRepository),

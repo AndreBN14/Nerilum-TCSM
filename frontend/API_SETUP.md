@@ -102,17 +102,27 @@ Para publicar Flutter web, autorizar también su origen exacto en CORS.
 
 ## Funcionamiento de la integración
 
-- La capa de datos HTTP envía JWT Bearer, archivo multipart y nombre opcional.
-- `MainViewModel` genera una clave UUID por operación y la conserva tras un fallo
-  para reintentar con `Idempotency-Key`. Seleccionar otra imagen o cambiar el nombre
-  inicia otra operación. Esa clave se conserva en memoria, no entre reinicios.
-- Un timeout no garantiza que el servidor no haya guardado; reintentar con la misma
-  operación evita duplicados **cuando el backend corregido está desplegado y su
-  esquema de idempotencia está aplicado**. Una API antigua puede ignorar el encabezado.
-  Se envía la misma clave hasta que cambie la operación; no hay reenvíos automáticos.
-  El timeout predeterminado es de 120 segundos. Tras un resultado exitoso se bloquea
-  el envío de esa operación; seleccionar otra imagen o cambiar su nombre inicia otra,
-  no renombra un registro ya guardado.
+- El backend v2 primero recibe la imagen por `POST /analyses/preview` y devuelve
+  clase, puntuaciones y un comprobante firmado sin crear un registro. Solo tras
+  pulsar **Guardar en historial**, Flutter envía comprobante y nombre a
+  `POST /analyses/save`. Descartar no modifica la BD ni reenvía la imagen.
+- Para habilitar estas dos rutas en Render, configurar una clave aleatoria de
+  al menos 32 caracteres en `ANALYSIS_PROOF_SECRET`, compartida entre instancias.
+  Sin ella el nuevo flujo responde 503; el backend anterior puede seguir
+  atendiendo APK anteriores mediante el POST legado que analiza y guarda junto.
+  Antes de publicar el APK de este flujo, confirma que Render ejecuta backend v2
+  y que tiene configurado `ANALYSIS_PROOF_SECRET`. Mantenerlo igual entre instancias.
+- La capa de datos HTTP envía el JWT Bearer de Supabase en ambas peticiones.
+- `MainViewModel` conserva el comprobante de la operación mientras siga abierta;
+  editar el nombre antes de guardar no repite inferencia. Reintentar el mismo
+  guardado mantiene el comprobante y no crea otra fila.
+- Un timeout durante `save` no demuestra que no se haya insertado: actualizar
+  el historial antes de repetir. El backend v2 deduplica el comprobante incluso
+  si el cliente intenta guardarlo con otra clave. No hay reenvíos automáticos.
+  El timeout predeterminado sigue siendo de 120 segundos.
+- Los APK anteriores siguen usando la ruta legada con `Idempotency-Key`.
+- Las imágenes solo viven temporalmente en memoria del dispositivo; registros
+  abiertos otro día muestran un marcador neutro y el PDF omite la imagen.
 - El historial usa las páginas del backend (100 por solicitud), las recorre hasta
   completar la lista y conserva el orden local existente. Utiliza el orden de fecha
   predeterminado del servidor sin exigir el parámetro `sort`, para mantener

@@ -136,6 +136,49 @@ void main() {
     expect(called, isFalse);
   });
 
+  test(
+    'Previsualización no guarda y el POST de guardado usa prueba firmada',
+    () async {
+      final paths = <String>[];
+      final client = MockClient((request) async {
+        paths.add(request.url.path);
+        expect(request.headers['Authorization'], 'Bearer test-access-token');
+        if (request.url.path.endsWith('/preview')) {
+          expect(request.method, 'POST');
+          expect(request.body, contains('name="file"; filename="mri.png"'));
+          return http.Response(
+            jsonEncode({
+              ..._result('an_123'),
+              'preview_id': 'an_123',
+              'save_proof': 'signed-test-proof',
+              'expires_at': '2026-10-09T13:00:00Z',
+            }),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          );
+        }
+        expect(request.method, 'POST');
+        expect(jsonDecode(request.body), {
+          'save_proof': 'signed-test-proof',
+          'display_name': 'Control',
+        });
+        return http.Response(
+          jsonEncode({..._result('an_123'), 'display_name': 'Control'}),
+          201,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+      final source = _source(client);
+      addTearDown(source.close);
+      final preview = await source.preview(_image());
+      expect(preview.result.category, 'NonDemented');
+      final saved = await source.savePreview(preview, displayName: ' Control ');
+      expect(saved.id, preview.result.id);
+      expect(saved.displayName, 'Control');
+      expect(paths, ['/api/v1/analyses/preview', '/api/v1/analyses/save']);
+    },
+  );
+
   test('Informa fallos de red y respuestas malformadas', () async {
     final network = _source(
       MockClient((_) async => throw http.ClientException('offline')),

@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models/analysis_result.dart';
+import '../../domain/models/analysis_preview.dart';
 import '../../domain/models/selected_image.dart';
 import '../theme/nerilum_theme.dart';
 import '../widgets/main_components.dart';
+import '../widgets/class_scores.dart';
 
 class AnalysisView extends StatelessWidget {
   const AnalysisView({
     super.key,
     required this.image,
     required this.result,
+    this.preview,
+    this.saving = false,
+    this.onSave,
+    this.onDiscard,
     required this.error,
     required this.processing,
     required this.onBack,
@@ -22,6 +28,10 @@ class AnalysisView extends StatelessWidget {
 
   final SelectedImage? image;
   final AnalysisResult? result;
+  final AnalysisPreview? preview;
+  final bool saving;
+  final VoidCallback? onSave;
+  final VoidCallback? onDiscard;
   final String? error;
   final bool processing;
   final VoidCallback onBack;
@@ -125,7 +135,7 @@ class AnalysisView extends StatelessWidget {
                         ),
                         IconButton(
                           tooltip: 'Quitar imagen',
-                          onPressed: processing ? null : onRemove,
+                          onPressed: processing || saving ? null : onRemove,
                           icon: const Icon(Icons.close),
                         ),
                       ],
@@ -140,7 +150,7 @@ class AnalysisView extends StatelessWidget {
             TextFormField(
               key: ValueKey(image),
               initialValue: analysisName,
-              enabled: !processing,
+              enabled: !processing && !saving && result == null,
               maxLength: 120,
               onChanged: onNameChanged,
               decoration: const InputDecoration(
@@ -158,32 +168,77 @@ class AnalysisView extends StatelessWidget {
               ),
             ),
           ],
-          if (result != null) ...[
+          if (preview != null || result != null) ...[
             const SizedBox(height: 16),
-            ResultCard(result: result!, onTap: null),
+            if (preview != null)
+              const Text(
+                'Resultado sin guardar',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              ),
+            const SizedBox(height: 10),
+            ResultCard(
+              result: (preview?.result ?? result)!,
+              onTap: null,
+              displayNameOverride:
+                  preview == null || analysisName.trim().isEmpty
+                  ? null
+                  : analysisName.trim(),
+            ),
             const SizedBox(height: 12),
             Text(
-              'Categoría del modelo: ${result!.category}',
+              'Categoría del modelo: ${(preview?.result ?? result)!.category}',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
+            if (preview != null) ...[
+              const SizedBox(height: 20),
+              ClassScores(result: preview!.result),
+            ],
+            if (preview != null) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'Este resultado no aparecerá en el historial hasta que lo guardes. '
+                'Si no le asignas nombre, se guardará como “Análisis sin nombre”.',
+              ),
+              const SizedBox(height: 16),
+              MintButton(
+                label: saving ? 'Guardando…' : 'Guardar en historial',
+                icon: Icons.save_outlined,
+                onPressed: saving ? null : onSave,
+              ),
+              TextButton(
+                onPressed: saving ? null : onDiscard,
+                child: const Text('Descartar resultado'),
+              ),
+            ] else
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Text('Guardado en el historial'),
+              ),
           ],
           const SizedBox(height: 20),
           MintButton(
             label: processing
                 ? 'Analizando imagen'
-                : (result != null
-                      ? 'Análisis completado'
-                      : error == null
-                      ? 'Analizar imagen'
-                      : 'Reintentar análisis'),
+                : preview != null
+                ? 'Resultado listo para guardar'
+                : result != null
+                ? 'Análisis completado'
+                : error == null
+                ? 'Analizar imagen'
+                : 'Reintentar análisis',
             icon: processing ? Icons.hourglass_top : Icons.arrow_forward,
-            onPressed: image == null || processing || result != null
+            onPressed:
+                image == null ||
+                    processing ||
+                    saving ||
+                    preview != null ||
+                    result != null
                 ? null
                 : onAnalyze,
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: processing ? null : onPick,
+            onPressed: processing || saving ? null : onPick,
             icon: Icon(image == null ? Icons.image_outlined : Icons.sync),
             label: Text(
               image == null ? 'Seleccionar imagen' : 'Cambiar imagen',

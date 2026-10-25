@@ -8,6 +8,7 @@ class AnalysisResultDto {
     final probability = json['probability'];
     final name = json['display_name'];
     final scores = json['scores'];
+    final model = json['model'];
     if (id is! String ||
         id.isEmpty ||
         category is! String ||
@@ -40,6 +41,15 @@ class AnalysisResultDto {
       probability: probability.toDouble(),
       scores: Map.unmodifiable(values),
       isDemo: json['is_demo'] == true,
+      modelName: model is Map<String, dynamic>
+          ? model['name'] as String?
+          : json['model_name'] as String?,
+      modelVersion: model is Map<String, dynamic>
+          ? model['version'] as String?
+          : json['model_version'] as String?,
+      modelDataset: model is Map<String, dynamic>
+          ? model['dataset'] as String?
+          : json['model_dataset'] as String?,
     );
   }
 }

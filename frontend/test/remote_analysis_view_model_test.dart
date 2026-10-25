@@ -69,11 +69,12 @@ void main() {
     await model.analyze();
     expect(repository.keys, hasLength(2));
     model.setAnalysisName('Otro análisis');
+    expect(model.analysisName, 'Mi análisis');
     await model.analyze();
-    expect(repository.keys[2], isNot(repository.keys[1]));
+    expect(repository.keys, hasLength(2));
     await model.pickImage();
     await model.analyze();
-    expect(repository.keys[3], isNot(repository.keys[2]));
+    expect(repository.keys[2], isNot(repository.keys[1]));
   });
 
   test(

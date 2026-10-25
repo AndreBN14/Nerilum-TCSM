@@ -106,10 +106,16 @@ class EmptyHistory extends StatelessWidget {
 }
 
 class ResultCard extends StatelessWidget {
-  const ResultCard({super.key, required this.result, required this.onTap});
+  const ResultCard({
+    super.key,
+    required this.result,
+    required this.onTap,
+    this.displayNameOverride,
+  });
 
   final AnalysisResult result;
   final VoidCallback? onTap;
+  final String? displayNameOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +145,9 @@ class ResultCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               Text(
-                result.displayName ?? 'Análisis sin nombre',
+                displayNameOverride ??
+                    result.displayName ??
+                    'Análisis sin nombre',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -148,6 +156,13 @@ class ResultCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
+              Text(
+                'Clase estimada: ${result.category}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colors.mintSecondary, fontSize: 13),
+              ),
+              const SizedBox(height: 6),
               Text(
                 result.probability == null
                     ? 'Probabilidad: —'

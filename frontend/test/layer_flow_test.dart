@@ -143,7 +143,11 @@ void main() {
       await tester.tap(find.text('Ver todo'));
       await tester.pumpAndSettle();
       expect(find.text('Caso de prueba'), findsOneWidget);
-      expect(find.text('Probabilidad: 83 %'), findsOneWidget);
+      expect(find.text('MildDemented'), findsOneWidget);
+      await tester.tap(find.text('Caso de prueba'));
+      await tester.pumpAndSettle();
+      expect(find.text('Detalle del análisis'), findsOneWidget);
+      expect(find.text('Puntuación del modelo: 83,00 %'), findsOneWidget);
     },
   );
 }
