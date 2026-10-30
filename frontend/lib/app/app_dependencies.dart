@@ -14,6 +14,7 @@ import '../data/repositories/mock_analysis_repository.dart';
 import '../domain/models/appearance.dart';
 import '../domain/repositories/account_repository.dart';
 import '../domain/repositories/analysis_repository.dart';
+import '../domain/repositories/pending_analysis_repository.dart';
 import '../domain/repositories/preview_repository.dart';
 import '../domain/usecases/preview_use_cases.dart';
 import '../domain/usecases/generate_report.dart';
@@ -39,6 +40,7 @@ class AppDependencies {
     MockSessionDataSource? sessionStore,
     ImageRepository? images,
     AnalysisRepository? analysis,
+    PendingAnalysisRepository? pendingAnalyses,
     AppearanceRepository? settings,
     HistorySortRepository? historySort,
     AppAppearance initialAppearance = AppAppearance.dark,
@@ -94,6 +96,7 @@ class AppDependencies {
       currentAccount: CurrentAccount(accountRepository),
       logoutAccount: LogoutAccount(accountRepository),
       onLogout: sessionController.signOut,
+      pendingRepository: pendingAnalyses,
     );
   }
 
@@ -113,6 +116,9 @@ class AppDependencies {
       // Si no se puede recuperar la sesión mock, se ofrece la bienvenida.
     }
     sessionController.restore(accountRepository.currentAccount?.id);
+    if (accountRepository.currentAccount != null) {
+      await mainViewModel.loadPending();
+    }
     if (accountRepository.currentAccount != null && !usesRemoteAnalysis) {
       await mainViewModel.refreshHistory();
     }

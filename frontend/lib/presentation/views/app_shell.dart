@@ -31,12 +31,16 @@ class AppShell extends StatelessWidget {
   void _history(BuildContext context) {
     final model = AppScope.of(context).mainViewModel;
     model.refreshHistory();
+    model.loadPending();
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (routeContext) => AnimatedBuilder(
           animation: model,
           builder: (routeContext, _) => HistoryView(
             records: model.analyses,
+            pending: model.pendingAnalyses,
+            pendingError: model.pendingError,
+            onDiscardPending: model.discardPending,
             sort: model.historySort,
             onSortChanged: (sort) => _changeSort(routeContext, sort),
             loading: model.historyLoading,
@@ -97,7 +101,75 @@ class AppShell extends StatelessWidget {
     }
   }
 
+  Future<void> _offerQueue(BuildContext context) async {
+    final model = AppScope.of(context).mainViewModel;
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Guardar para más tarde'),
+        content: const Text(
+          'La imagen se guardará cifrada en este dispositivo. Al recuperar la conexión '
+          'podrás ver el resultado; no se añadirá al historial hasta que pulses Guardar. '
+          'Puedes descartar la imagen pendiente en cualquier momento.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Guardar pendiente'),
+          ),
+        ],
+      ),
+    );
+    if (accepted == true && context.mounted) {
+      final saved = await model.enqueueSelected();
+      if (context.mounted && saved) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Imagen pendiente guardada en este dispositivo.'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _confirmLogout(BuildContext context) async {
+    final model = AppScope.of(context).mainViewModel;
+    if (model.pendingAnalyses.isNotEmpty) {
+      final decision = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Imágenes pendientes'),
+          content: const Text(
+            '¿Quieres conservar tus imágenes pendientes cifradas en este dispositivo al cerrar sesión?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'delete'),
+              child: const Text('Borrar pendientes'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, 'keep'),
+              child: const Text('Conservar pendientes'),
+            ),
+          ],
+        ),
+      );
+      if (!context.mounted || decision == null) return;
+      if (decision == 'delete') {
+        for (final item in List.of(model.pendingAnalyses)) {
+          await model.discardPending(item.id);
+        }
+        if (!context.mounted) return;
+      }
+    }
     final logout = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -152,6 +224,10 @@ class AppShell extends StatelessWidget {
                 onPick: model.pickImage,
                 onRemove: model.removeImage,
                 onAnalyze: () => _analyze(context),
+                onQueue: model.canQueueImage
+                    ? () => _offerQueue(context)
+                    : null,
+                pendingError: model.pendingError,
               ),
               _ => ProfileView(
                 account: model.account,

@@ -37,8 +37,12 @@ No aparecerá un resultado en el historial hasta pulsar Guardar; descartar no
 genera ningún registro. Requiere desplegar primero el backend v2 y configurar
 `ANALYSIS_PROOF_SECRET` en Render. Los APK anteriores mantienen su ruta legada.
 Historial y Detalle tienen vistas propias; el PDF se genera localmente desde
-un registro guardado. La imagen solo acompaña al PDF si sigue en memoria durante
+un registro guardado. La imagen online solo acompaña al PDF si sigue en memoria durante
 la sesión. La fuente Lato empaquetada para PDF está licenciada en `assets/OFL-Lato.txt`.
+
+En Android con cuenta Supabase, cuando falla la red se puede aceptar guardar
+la imagen **cifrada en este dispositivo** como pendiente. Se conserva por cuenta
+hasta descartarla o guardar el resultado tras previsualizarlo con conexión.
 
 ## Abrir como web desde Android Studio
 

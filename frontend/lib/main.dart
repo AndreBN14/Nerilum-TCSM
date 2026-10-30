@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/app_dependencies.dart';
@@ -11,6 +12,8 @@ import 'data/datasources/http_analysis_data_source.dart';
 import 'data/repositories/http_analysis_repository.dart';
 import 'data/datasources/supabase_account_data_source.dart';
 import 'data/repositories/supabase_account_repository.dart';
+import 'data/repositories/encrypted_pending_analysis_repository.dart';
+import 'domain/repositories/analysis_repository.dart';
 import 'app/app_scope.dart';
 import 'domain/models/appearance.dart';
 import 'domain/models/account.dart';
@@ -35,11 +38,17 @@ Future<void> main() async {
           ? HttpAnalysisDataSource(
               baseUri: apiConfig.baseUri,
               accessToken: () async {
-                var session = client.auth.currentSession;
-                if (session != null && session.isExpired) {
-                  session = (await client.auth.refreshSession()).session;
+                try {
+                  var session = client.auth.currentSession;
+                  if (session != null && session.isExpired) {
+                    session = (await client.auth.refreshSession()).session;
+                  }
+                  return session?.accessToken;
+                } on AuthRetryableFetchException {
+                  throw const AnalysisNetworkFailure(
+                    'Sin conexión para verificar la sesión.',
+                  );
                 }
-                return session?.accessToken;
               },
             )
           : null;
@@ -51,6 +60,12 @@ Future<void> main() async {
             ? const UnconfiguredAnalysisRepository()
             : HttpAnalysisRepository(analysisSource),
         usesRemoteAnalysis: analysisSource != null,
+        pendingAnalyses:
+            analysisSource != null &&
+                !kIsWeb &&
+                defaultTargetPlatform == TargetPlatform.android
+            ? EncryptedPendingAnalysisRepository()
+            : null,
         onDispose: analysisSource?.close,
       );
     } else {
@@ -147,6 +162,7 @@ class _NerilumAppState extends State<NerilumApp> {
             if (account != null) {
               _dependencies.mainViewModel.clearSessionState();
               _dependencies.mainViewModel.refreshHistory();
+              _dependencies.mainViewModel.loadPending();
               _navigatorKey.currentState?.pushNamedAndRemoveUntil(
                 '/app',
                 (_) => false,

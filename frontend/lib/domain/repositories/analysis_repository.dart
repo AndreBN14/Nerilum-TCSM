@@ -11,6 +11,10 @@ class AnalysisFailure implements Exception {
   final String message;
 }
 
+class AnalysisNetworkFailure extends AnalysisFailure {
+  const AnalysisNetworkFailure(super.message);
+}
+
 abstract class AnalysisRepository {
   Future<AnalysisResult> analyze(
     SelectedImage image, {

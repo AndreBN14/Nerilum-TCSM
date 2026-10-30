@@ -121,8 +121,10 @@ Para publicar Flutter web, autorizar también su origen exacto en CORS.
   si el cliente intenta guardarlo con otra clave. No hay reenvíos automáticos.
   El timeout predeterminado sigue siendo de 120 segundos.
 - Los APK anteriores siguen usando la ruta legada con `Idempotency-Key`.
-- Las imágenes solo viven temporalmente en memoria del dispositivo; registros
-  abiertos otro día muestran un marcador neutro y el PDF omite la imagen.
+- Las imágenes de análisis online viven temporalmente en memoria; los pendientes
+  aceptados explícitamente se guardan cifrados en almacenamiento privado Android
+  hasta descartarlos o guardar el resultado. Los registros históricos no conservan
+  la imagen en Render y el PDF la omite si ya no está disponible.
 - El historial usa las páginas del backend (100 por solicitud), las recorre hasta
   completar la lista y conserva el orden local existente. Utiliza el orden de fecha
   predeterminado del servidor sin exigir el parámetro `sort`, para mantener

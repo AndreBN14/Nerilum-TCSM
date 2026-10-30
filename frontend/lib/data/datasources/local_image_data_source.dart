@@ -37,7 +37,16 @@ class LocalImageDataSource {
       }
       try {
         final codec = await ui.instantiateImageCodec(bytes);
+        final frame = await codec.getNextFrame();
+        final width = frame.image.width;
+        final height = frame.image.height;
+        frame.image.dispose();
         codec.dispose();
+        if (width > 4096 || height > 4096 || width * height > 16777216) {
+          throw const ImageSelectionFailure('La imagen supera las dimensiones admitidas.');
+        }
+      } on ImageSelectionFailure {
+        rethrow;
       } catch (_) {
         throw const ImageSelectionFailure(
           'El archivo no contiene una imagen válida. Elige otra.',

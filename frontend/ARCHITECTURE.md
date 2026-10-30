@@ -14,7 +14,7 @@ La aplicación sigue **View → ViewModel (`ChangeNotifier`) → UseCase → Rep
 ## Flujos actuales
 
 - **Cuenta:** `AuthScreen → AuthViewModel → LoginAccount / RegisterAccount → AccountRepository → MockAccountDataSource + LocalMockSessionDataSource`. Se guarda solo nombre y correo de la sesión mock con `shared_preferences`; el splash la restaura y cerrar sesión elimina el dato. Las credenciales de nuevas cuentas registradas siguen siendo temporales y no se almacenan.
-- **Imagen:** `AnalysisView → MainViewModel → SelectImage → ImageRepository → LocalImageDataSource`. Se comprueban extensión JPG/PNG, límite de 10 MB y decodificación; la selección vive solo en memoria.
+- **Imagen:** `AnalysisView → MainViewModel → SelectImage → ImageRepository → LocalImageDataSource`. Se comprueban extensión JPG/PNG, límite de 10 MB, dimensiones del backend y decodificación. La selección online vive solo en memoria; si se consiente encolar, los bytes quedan cifrados localmente.
 - **Resultado:** `AnalysisView → MainViewModel → PreviewImage` abre `PreviewResultPage`; el nombre solo se edita allí. Salir con el resultado sin guardar solicita confirmación; guardar ejecuta `SaveAnalysis` y abre el detalle persistido. `ImageZoomPage` permite ampliar la imagen seleccionada sin enviarla de nuevo.
 - **Análisis e historial:** `MainViewModel → AnalyzeImage / LoadHistory → AnalysisRepository`. En modo real con URL se utiliza HTTP; en modo mock, `MockAnalysisDataSource` ofrece ejemplos solo para la cuenta demo. Sin modelo disponible, la API devuelve un error explícito; no se inventan resultados para las imágenes seleccionadas.
 - **Ordenamiento:** `HomeView / Historial → MainViewModel → LoadHistorySort / SaveHistorySort → HistorySortRepository → LocalHistorySortDataSource`. Ambas vistas comparten orden y lo conservan con `shared_preferences`.
@@ -58,6 +58,10 @@ sin insertar, conserva el comprobante firmado en memoria y lo guarda solo tras
 la acción del usuario. El registro persistido conserva las puntuaciones y
 metadatos; la imagen se mantiene temporalmente en memoria, se elimina al cerrar
 sesión y nunca se incluye en un PDF histórico si ya no está disponible.
+En Android con Supabase, `PendingAnalysisRepository` conserva pendientes cifrados
+por UUID en SQLCipher y archivos AES-GCM después del consentimiento explícito.
+El backend aún no recibe imágenes desde la cola en esta etapa; los pendientes
+persisten tras cerrar sesión y se separan por cuenta. `android:allowBackup=false`.
 `ReportRepository → GenerateReport → ReportViewModel → PresentReport → ReportOutputRepository`
 genera un PDF local desde un registro guardado y lo abre o comparte mediante
 un adaptador de `printing` en `data/`. Las vistas no importan el plugin. El PDF,

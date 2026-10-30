@@ -26,6 +26,8 @@ class HttpAnalysisDataSource {
     String? token;
     try {
       token = await accessToken();
+    } on AnalysisNetworkFailure {
+      rethrow;
     } catch (_) {
       throw const AnalysisFailure(
         'No se pudo recuperar la sesión. Vuelve a iniciar sesión.',
@@ -44,11 +46,11 @@ class HttpAnalysisDataSource {
           .then(http.Response.fromStream)
           .timeout(timeout);
     } on TimeoutException {
-      throw const AnalysisFailure(
+      throw const AnalysisNetworkFailure(
         'El servidor tardó demasiado. Revisa el historial antes de reintentar la misma operación.',
       );
     } on http.ClientException {
-      throw const AnalysisFailure(
+      throw const AnalysisNetworkFailure(
         'No se pudo completar la conexión. Revisa el historial antes de reintentar.',
       );
     }

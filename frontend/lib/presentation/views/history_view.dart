@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/models/analysis_result.dart';
 import '../../domain/models/history_sort.dart';
+import '../../domain/models/pending_analysis.dart';
 import '../../core/theme/nerilum_theme.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/history_sort_control.dart';
@@ -12,6 +13,9 @@ class HistoryView extends StatefulWidget {
   const HistoryView({
     super.key,
     required this.records,
+    this.pending = const [],
+    this.pendingError,
+    this.onDiscardPending,
     required this.sort,
     required this.onSortChanged,
     required this.loading,
@@ -24,6 +28,9 @@ class HistoryView extends StatefulWidget {
   });
 
   final List<AnalysisResult> records;
+  final List<PendingAnalysis> pending;
+  final String? pendingError;
+  final ValueChanged<String>? onDiscardPending;
   final HistorySort sort;
   final ValueChanged<HistorySort> onSortChanged;
   final bool loading;
@@ -149,11 +156,37 @@ class _HistoryViewState extends State<HistoryView> {
                   error: widget.error,
                   onRetry: widget.onRefresh,
                 ),
+                if (widget.pendingError != null)
+                  Text(
+                    widget.pendingError!,
+                    style: TextStyle(color: colors.error),
+                  ),
+                for (final item in widget.pending) ...[
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.cloud_upload_outlined),
+                      title: Text(item.filename),
+                      subtitle: const Text(
+                        'Pendiente local · aún no guardado en historial',
+                      ),
+                      trailing: IconButton(
+                        tooltip: 'Descartar pendiente',
+                        onPressed: widget.onDiscardPending == null
+                            ? null
+                            : () => widget.onDiscardPending!(item.id),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (widget.records.isEmpty &&
+                    widget.pending.isEmpty &&
                     !widget.loading &&
                     widget.error == null)
                   EmptyHistory(onSelect: widget.onSelectImage)
                 else if (visible.isEmpty &&
+                    widget.pending.isEmpty &&
                     !widget.loading &&
                     widget.error == null)
                   const Padding(

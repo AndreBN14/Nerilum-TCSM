@@ -6,8 +6,10 @@ import '../../domain/models/analysis_result.dart';
 import '../../domain/models/analysis_preview.dart';
 import '../../domain/models/selected_image.dart';
 import '../../domain/models/history_sort.dart';
+import '../../domain/models/pending_analysis.dart';
 import '../../domain/repositories/analysis_repository.dart';
 import '../../domain/repositories/image_repository.dart';
+import '../../domain/repositories/pending_analysis_repository.dart';
 import '../../domain/usecases/account_use_cases.dart';
 import '../../domain/usecases/analysis_use_cases.dart';
 import '../../domain/usecases/preview_use_cases.dart';
@@ -27,6 +29,7 @@ class MainViewModel extends ChangeNotifier {
     required this.currentAccount,
     required this.logoutAccount,
     this.onLogout,
+    this.pendingRepository,
   });
 
   final SelectImage selectImage;
@@ -40,12 +43,17 @@ class MainViewModel extends ChangeNotifier {
   final CurrentAccount currentAccount;
   final LogoutAccount logoutAccount;
   final VoidCallback? onLogout;
+  final PendingAnalysisRepository? pendingRepository;
 
   int tab = 0;
   SelectedImage? image;
   AnalysisResult? result;
   AnalysisPreview? preview;
   String? error;
+  bool canQueueImage = false;
+  String? pendingError;
+  List<PendingAnalysis> pendingAnalyses = const [];
+  bool _enqueuing = false;
   bool processing = false;
   bool saving = false;
   bool picking = false;
@@ -132,6 +140,7 @@ class MainViewModel extends ChangeNotifier {
       result = null;
       preview = null;
       error = null;
+      canQueueImage = false;
       notifyListeners();
     } on ImageSelectionFailure catch (failure) {
       if (_disposed || session != _sessionVersion) return;
@@ -141,6 +150,7 @@ class MainViewModel extends ChangeNotifier {
       result = null;
       preview = null;
       error = failure.message;
+      canQueueImage = false;
       notifyListeners();
     } finally {
       picking = false;
@@ -155,6 +165,7 @@ class MainViewModel extends ChangeNotifier {
     result = null;
     preview = null;
     error = null;
+    canQueueImage = false;
     notifyListeners();
   }
 
@@ -169,6 +180,7 @@ class MainViewModel extends ChangeNotifier {
     final session = _sessionVersion;
     processing = true;
     error = null;
+    canQueueImage = false;
     notifyListeners();
     try {
       if (previewImage != null) {
@@ -190,6 +202,10 @@ class MainViewModel extends ChangeNotifier {
     } on AnalysisUnavailable catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;
+    } on AnalysisNetworkFailure catch (failure) {
+      if (_disposed || session != _sessionVersion) return;
+      error = failure.message;
+      canQueueImage = pendingRepository != null;
     } on AnalysisFailure catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;
@@ -201,6 +217,68 @@ class MainViewModel extends ChangeNotifier {
         processing = false;
         notifyListeners();
       }
+    }
+  }
+
+  Future<void> loadPending() async {
+    final owner = account?.id;
+    if (pendingRepository == null || owner == null) return;
+    final session = _sessionVersion;
+    try {
+      final records = await pendingRepository!.list(owner);
+      if (_disposed || session != _sessionVersion || account?.id != owner) {
+        return;
+      }
+      pendingAnalyses = records;
+      pendingError = null;
+    } catch (_) {
+      if (_disposed || session != _sessionVersion) return;
+      pendingError = 'No se pudieron leer los pendientes cifrados.';
+    }
+    notifyListeners();
+  }
+
+  Future<bool> enqueueSelected() async {
+    final owner = account?.id;
+    final selected = image;
+    if (!canQueueImage ||
+        pendingRepository == null ||
+        owner == null ||
+        selected == null ||
+        processing ||
+        saving ||
+        _enqueuing) {
+      return false;
+    }
+    final session = _sessionVersion;
+    _enqueuing = true;
+    try {
+      await pendingRepository!.enqueue(owner, selected);
+      if (_disposed || session != _sessionVersion || account?.id != owner) {
+        return false;
+      }
+      removeImage();
+      await loadPending();
+      return true;
+    } catch (_) {
+      if (_disposed || session != _sessionVersion) return false;
+      pendingError = 'No se pudo guardar el pendiente cifrado. Comprueba el espacio disponible.';
+      notifyListeners();
+      return false;
+    } finally {
+      _enqueuing = false;
+    }
+  }
+
+  Future<void> discardPending(String id) async {
+    final owner = account?.id;
+    if (owner == null || pendingRepository == null) return;
+    try {
+      await pendingRepository!.discard(owner, id);
+      await loadPending();
+    } catch (_) {
+      pendingError = 'No se pudo descartar el pendiente.';
+      notifyListeners();
     }
   }
 
@@ -315,6 +393,9 @@ class MainViewModel extends ChangeNotifier {
     saving = false;
     _sessionImages.clear();
     error = null;
+    canQueueImage = false;
+    pendingError = null;
+    pendingAnalyses = const [];
     _analyses = const [];
     tab = 0;
     processing = false;

@@ -15,6 +15,8 @@ class AnalysisView extends StatelessWidget {
     required this.onPick,
     required this.onRemove,
     required this.onAnalyze,
+    this.onQueue,
+    this.pendingError,
   });
 
   final SelectedImage? image;
@@ -24,6 +26,8 @@ class AnalysisView extends StatelessWidget {
   final VoidCallback onPick;
   final VoidCallback onRemove;
   final VoidCallback onAnalyze;
+  final VoidCallback? onQueue;
+  final String? pendingError;
 
   @override
   Widget build(BuildContext context) {
@@ -149,6 +153,18 @@ class AnalysisView extends StatelessWidget {
                 error!,
                 style: TextStyle(color: colors.error, fontSize: 14),
               ),
+            ),
+          ],
+          if (pendingError != null) ...[
+            const SizedBox(height: 10),
+            Text(pendingError!, style: TextStyle(color: colors.error)),
+          ],
+          if (onQueue != null) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: onQueue,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('Guardar imagen pendiente en el dispositivo'),
             ),
           ],
           const SizedBox(height: 20),
