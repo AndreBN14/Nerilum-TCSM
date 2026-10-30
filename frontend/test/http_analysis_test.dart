@@ -137,6 +137,32 @@ void main() {
   });
 
   test(
+    'Consulta por preview_id antes de repetir un guardado incierto',
+    () async {
+      var calls = 0;
+      final source = _source(
+        MockClient((request) async {
+          calls++;
+          expect(request.method, 'GET');
+          expect(request.url.path, '/api/v1/analyses/an_123abc');
+          expect(request.headers['Authorization'], 'Bearer test-access-token');
+          return calls == 1
+              ? http.Response('{}', 404)
+              : http.Response(
+                  jsonEncode(_result('an_123abc')),
+                  200,
+                  headers: {'content-type': 'application/json; charset=utf-8'},
+                );
+        }),
+      );
+      addTearDown(source.close);
+      expect(await source.findById('an_123abc'), isNull);
+      expect((await source.findById('an_123abc'))?.id, 'an_123abc');
+      expect(calls, 2);
+    },
+  );
+
+  test(
     'Previsualización no guarda y el POST de guardado usa prueba firmada',
     () async {
       final paths = <String>[];

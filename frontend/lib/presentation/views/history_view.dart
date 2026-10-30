@@ -16,6 +16,8 @@ class HistoryView extends StatefulWidget {
     this.pending = const [],
     this.pendingError,
     this.onDiscardPending,
+    this.onOpenPending,
+    this.readyPendingId,
     required this.sort,
     required this.onSortChanged,
     required this.loading,
@@ -31,6 +33,8 @@ class HistoryView extends StatefulWidget {
   final List<PendingAnalysis> pending;
   final String? pendingError;
   final ValueChanged<String>? onDiscardPending;
+  final ValueChanged<PendingAnalysis>? onOpenPending;
+  final String? readyPendingId;
   final HistorySort sort;
   final ValueChanged<HistorySort> onSortChanged;
   final bool loading;
@@ -164,10 +168,17 @@ class _HistoryViewState extends State<HistoryView> {
                 for (final item in widget.pending) ...[
                   Card(
                     child: ListTile(
+                      onTap: widget.onOpenPending == null
+                          ? null
+                          : () => widget.onOpenPending!(item),
                       leading: const Icon(Icons.cloud_upload_outlined),
                       title: Text(item.filename),
-                      subtitle: const Text(
-                        'Pendiente local · aún no guardado en historial',
+                      subtitle: Text(
+                        item.status == 'saving'
+                            ? 'Comprobar guardado pendiente'
+                            : item.id == widget.readyPendingId
+                            ? 'Resultado listo para revisar · sin guardar'
+                            : 'Pendiente local · tocar para ver resultado',
                       ),
                       trailing: IconButton(
                         tooltip: 'Descartar pendiente',

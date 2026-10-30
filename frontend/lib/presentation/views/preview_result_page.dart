@@ -116,6 +116,11 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
                         const SizedBox(width: 48),
                       ],
                     ),
+                    if (preview == null && widget.model.pendingError != null)
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(widget.model.pendingError!),
+                      ),
                     if (preview != null) ...[
                       const SizedBox(height: 24),
                       ResultCard(
@@ -129,7 +134,7 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
                       const SizedBox(height: 16),
                       TextFormField(
                         initialValue: widget.model.analysisName,
-                        enabled: !widget.model.saving,
+                        enabled: widget.model.canEditPreviewName,
                         maxLength: 120,
                         onChanged: widget.model.setAnalysisName,
                         decoration: const InputDecoration(

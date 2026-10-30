@@ -120,7 +120,7 @@ class EncryptedPendingAnalysisRepository implements PendingAnalysisRepository {
   }
 
   Future<void> _reconcile(Database db) async {
-    final rows = await db.query('pending_analyses', columns: ['id']);
+    final rows = await db.query('pending_analyses', columns: ['id', 'status']);
     final ids = rows.map((row) => row['id'] as String).toSet();
     await for (final entry in _folder!.list()) {
       if (entry is! File) continue;
@@ -131,8 +131,9 @@ class EncryptedPendingAnalysisRepository implements PendingAnalysisRepository {
         await entry.delete();
       }
     }
-    for (final id in ids) {
-      if (!await _imageFile(id).exists()) {
+    for (final row in rows) {
+      final id = row['id'] as String;
+      if (row['status'] != 'saving' && !await _imageFile(id).exists()) {
         await db.update(
           'pending_analyses',
           {'status': 'failed'},
@@ -239,6 +240,18 @@ class EncryptedPendingAnalysisRepository implements PendingAnalysisRepository {
   }
 
   @override
+  Future<PendingAnalysis?> find(String ownerId, String id) async {
+    final db = await _open();
+    final rows = await db.query(
+      'pending_analyses',
+      where: 'owner_id = ? AND id = ?',
+      whereArgs: [ownerId, id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : _parse(rows.single);
+  }
+
+  @override
   Future<SelectedImage> image(String ownerId, String id) async {
     final db = await _open();
     final rows = await db.query(
@@ -303,6 +316,23 @@ class EncryptedPendingAnalysisRepository implements PendingAnalysisRepository {
   }
 
   @override
+  Future<void> releaseExpiredSave(String ownerId, String id) async {
+    final db = await _open();
+    await db.update(
+      'pending_analyses',
+      {
+        'status': 'pending',
+        'preview_id': null,
+        'save_proof': null,
+        'proof_expires_at': null,
+        'display_name': null,
+      },
+      where: "owner_id = ? AND id = ? AND status = 'saving'",
+      whereArgs: [ownerId, id],
+    );
+  }
+
+  @override
   Future<void> beginSave(
     String ownerId,
     String id, {
@@ -330,14 +360,19 @@ class EncryptedPendingAnalysisRepository implements PendingAnalysisRepository {
   @override
   Future<void> complete(String ownerId, String id) async {
     final db = await _open();
-    final deleted = await db.delete(
+    final rows = await db.query(
       'pending_analyses',
+      columns: ['id'],
       where: "owner_id = ? AND id = ? AND status = 'saving'",
       whereArgs: [ownerId, id],
     );
-    if (deleted == 1) {
-      final file = _imageFile(id);
-      if (await file.exists()) await file.delete();
-    }
+    if (rows.isEmpty) return;
+    final file = _imageFile(id);
+    if (await file.exists()) await file.delete();
+    await db.delete(
+      'pending_analyses',
+      where: 'owner_id = ? AND id = ?',
+      whereArgs: [ownerId, id],
+    );
   }
 }

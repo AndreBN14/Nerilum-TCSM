@@ -60,8 +60,12 @@ metadatos; la imagen se mantiene temporalmente en memoria, se elimina al cerrar
 sesión y nunca se incluye en un PDF histórico si ya no está disponible.
 En Android con Supabase, `PendingAnalysisRepository` conserva pendientes cifrados
 por UUID en SQLCipher y archivos AES-GCM después del consentimiento explícito.
-El backend aún no recibe imágenes desde la cola en esta etapa; los pendientes
-persisten tras cerrar sesión y se separan por cuenta. `android:allowBackup=false`.
+Los pendientes persisten tras cerrar sesión y se separan por cuenta.
+Al volver la conexión con la app activa, se obtiene una previsualización sin
+guardar nada remoto. `save_proof` y nombre se fijan en la base cifrada **solo al
+confirmar Guardar**; tras un timeout se consulta el ID remoto y se reintenta el
+mismo comprobante para evitar duplicados. Si caduca sin haberse guardado,
+se exige una previsualización y confirmación nuevas. `android:allowBackup=false`.
 `ReportRepository → GenerateReport → ReportViewModel → PresentReport → ReportOutputRepository`
 genera un PDF local desde un registro guardado y lo abre o comparte mediante
 un adaptador de `printing` en `data/`. Las vistas no importan el plugin. El PDF,

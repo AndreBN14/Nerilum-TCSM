@@ -61,6 +61,14 @@ class _Queue implements PendingAnalysisRepository {
   Future<List<PendingAnalysis>> list(String ownerId) async =>
       items.where((item) => item.ownerId == ownerId).toList();
   @override
+  Future<PendingAnalysis?> find(String ownerId, String id) async {
+    for (final item in items) {
+      if (item.ownerId == ownerId && item.id == id) return item;
+    }
+    return null;
+  }
+
+  @override
   Future<void> discard(String ownerId, String id) async =>
       items.removeWhere((item) => item.ownerId == ownerId && item.id == id);
   @override
@@ -68,6 +76,8 @@ class _Queue implements PendingAnalysisRepository {
       throw UnimplementedError();
   @override
   Future<void> resetPreview(String ownerId, String id) async {}
+  @override
+  Future<void> releaseExpiredSave(String ownerId, String id) async {}
   @override
   Future<void> beginSave(
     String ownerId,

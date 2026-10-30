@@ -125,6 +125,10 @@ Para publicar Flutter web, autorizar también su origen exacto en CORS.
   aceptados explícitamente se guardan cifrados en almacenamiento privado Android
   hasta descartarlos o guardar el resultado. Los registros históricos no conservan
   la imagen en Render y el PDF la omite si ya no está disponible.
+- La cola offline Android intenta previsualizar pendientes con la app activa.
+  El guardado requiere confirmar el resultado; ante un timeout comprueba
+  `/analyses/{id}` y reintenta el mismo comprobante y nombre. No usa la ruta
+  legada que analizaba y guardaba automáticamente.
 - El historial usa las páginas del backend (100 por solicitud), las recorre hasta
   completar la lista y conserva el orden local existente. Utiliza el orden de fecha
   predeterminado del servidor sin exigir el parámetro `sort`, para mantener

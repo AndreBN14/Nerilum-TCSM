@@ -52,6 +52,12 @@ Future<void> main() async {
               },
             )
           : null;
+      final pendingSource =
+          analysisSource != null &&
+              !kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.android
+          ? EncryptedPendingAnalysisRepository()
+          : null;
       dependencies = AppDependencies(
         accounts: SupabaseAccountRepository(
           SupabaseAccountDataSource(Supabase.instance.client, config.redirect),
@@ -60,13 +66,11 @@ Future<void> main() async {
             ? const UnconfiguredAnalysisRepository()
             : HttpAnalysisRepository(analysisSource),
         usesRemoteAnalysis: analysisSource != null,
-        pendingAnalyses:
-            analysisSource != null &&
-                !kIsWeb &&
-                defaultTargetPlatform == TargetPlatform.android
-            ? EncryptedPendingAnalysisRepository()
-            : null,
-        onDispose: analysisSource?.close,
+        pendingAnalyses: pendingSource,
+        onDispose: () {
+          analysisSource?.close();
+          if (pendingSource != null) unawaited(pendingSource.close());
+        },
       );
     } else {
       dependencies = AppDependencies();

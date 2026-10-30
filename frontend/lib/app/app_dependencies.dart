@@ -97,6 +97,9 @@ class AppDependencies {
       logoutAccount: LogoutAccount(accountRepository),
       onLogout: sessionController.signOut,
       pendingRepository: pendingAnalyses,
+      lookupAnalysis: analysisRepository is AnalysisLookupRepository
+          ? analysisRepository as AnalysisLookupRepository
+          : null,
     );
   }
 

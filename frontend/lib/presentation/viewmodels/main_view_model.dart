@@ -30,6 +30,7 @@ class MainViewModel extends ChangeNotifier {
     required this.logoutAccount,
     this.onLogout,
     this.pendingRepository,
+    this.lookupAnalysis,
   });
 
   final SelectImage selectImage;
@@ -44,6 +45,7 @@ class MainViewModel extends ChangeNotifier {
   final LogoutAccount logoutAccount;
   final VoidCallback? onLogout;
   final PendingAnalysisRepository? pendingRepository;
+  final AnalysisLookupRepository? lookupAnalysis;
 
   int tab = 0;
   SelectedImage? image;
@@ -53,7 +55,11 @@ class MainViewModel extends ChangeNotifier {
   bool canQueueImage = false;
   String? pendingError;
   List<PendingAnalysis> pendingAnalyses = const [];
+  String? activePendingId;
+  bool _saveCommitted = false;
+  bool get canEditPreviewName => !_saveCommitted && !saving;
   bool _enqueuing = false;
+  final Set<String> _recoveringIds = {};
   bool processing = false;
   bool saving = false;
   bool picking = false;
@@ -282,6 +288,112 @@ class MainViewModel extends ChangeNotifier {
     }
   }
 
+  Future<bool> previewPending(String id) async {
+    final owner = account?.id;
+    if (pendingRepository == null ||
+        previewImage == null ||
+        owner == null ||
+        processing ||
+        saving ||
+        preview != null ||
+        image != null) {
+      return false;
+    }
+    final session = _sessionVersion;
+    processing = true;
+    pendingError = null;
+    notifyListeners();
+    try {
+      final item = await pendingRepository!.find(owner, id);
+      if (item == null || item.status != 'pending') return false;
+      final selected = await pendingRepository!.image(owner, id);
+      final prepared = await previewImage!(selected);
+      if (_disposed || session != _sessionVersion || account?.id != owner) {
+        return false;
+      }
+      image = selected;
+      preview = prepared;
+      activePendingId = id;
+      analysisName = '';
+      _saveCommitted = false;
+      notifyListeners();
+      return true;
+    } on AnalysisNetworkFailure {
+      if (!_disposed && session == _sessionVersion) {
+        pendingError =
+            'Sin conexión. El pendiente sigue cifrado en este dispositivo.';
+      }
+      return false;
+    } catch (_) {
+      if (!_disposed && session == _sessionVersion) {
+        pendingError = 'No se pudo previsualizar el pendiente. Sigue guardado en el dispositivo.';
+      }
+      return false;
+    } finally {
+      if (!_disposed && session == _sessionVersion) {
+        processing = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<AnalysisResult?> resumePendingSave(String id) async {
+    final owner = account?.id;
+    if (owner == null ||
+        pendingRepository == null ||
+        lookupAnalysis == null ||
+        !_recoveringIds.add(id)) {
+      return null;
+    }
+    try {
+      final item = await pendingRepository!.find(owner, id);
+      if (item == null ||
+          item.status != 'saving' ||
+          item.previewId == null ||
+          item.saveProof == null ||
+          item.displayName == null) {
+        return null;
+      }
+      final found = await lookupAnalysis!.findById(item.previewId!);
+      if (found != null) {
+        await pendingRepository!.complete(owner, id);
+        await loadPending();
+        await refreshHistory();
+        return found;
+      }
+      if (account?.id != owner) return null;
+      if (item.proofExpiresAt == null ||
+          DateTime.now().toUtc().isAfter(item.proofExpiresAt!)) {
+        await pendingRepository!.releaseExpiredSave(owner, id);
+        await loadPending();
+        pendingError = 'El comprobante expiró. Vuelve a ver el resultado antes de guardarlo.';
+        notifyListeners();
+        return null;
+      }
+      // El resultado pudo haberse guardado aunque se perdiera la respuesta.
+      // Reintentar exactamente el mismo comprobante y nombre evita duplicarlo.
+      final prepared = AnalysisPreview(
+        result: AnalysisResult(
+          id: item.previewId,
+          category: '',
+          createdAt: item.createdAt,
+        ),
+        saveProof: item.saveProof!,
+        expiresAt: item.proofExpiresAt!,
+      );
+      final saved = await saveAnalysis!(
+        prepared,
+        displayName: item.displayName,
+      );
+      await pendingRepository!.complete(owner, id);
+      await loadPending();
+      await refreshHistory();
+      return saved;
+    } finally {
+      _recoveringIds.remove(id);
+    }
+  }
+
   Future<void> savePreview() async {
     if (preview == null || saveAnalysis == null || saving || processing) return;
     final session = _sessionVersion;
@@ -289,17 +401,42 @@ class MainViewModel extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      final saved = await saveAnalysis!(
-        preview!,
-        displayName: analysisName.trim().isEmpty
-            ? 'Análisis sin nombre'
-            : analysisName.trim(),
-      );
+      final name = analysisName.trim().isEmpty
+          ? 'Análisis sin nombre'
+          : analysisName.trim();
+      final owner = account?.id;
+      final localId = activePendingId;
+      if (localId != null &&
+          owner != null &&
+          pendingRepository != null &&
+          !_saveCommitted) {
+        await pendingRepository!.beginSave(
+          owner,
+          localId,
+          previewId: preview!.result.id!,
+          proof: preview!.saveProof,
+          expiresAt: preview!.expiresAt,
+          name: name,
+        );
+        _saveCommitted = true;
+      }
+      final saved = localId == null
+          ? await saveAnalysis!(preview!, displayName: name)
+          : await resumePendingSave(localId);
+      if (saved == null) {
+        preview = null;
+        image = null;
+        activePendingId = null;
+        _saveCommitted = false;
+        return;
+      }
       if (_disposed || session != _sessionVersion) return;
       result = saved;
       _rememberImage(saved.id);
       preview = null;
-      await refreshHistory();
+      activePendingId = null;
+      _saveCommitted = false;
+      if (localId == null) await refreshHistory();
     } on AnalysisUnavailable catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;
@@ -320,6 +457,9 @@ class MainViewModel extends ChangeNotifier {
   void discardPreview() {
     if (saving || processing) return;
     preview = null;
+    if (activePendingId != null) image = null;
+    activePendingId = null;
+    _saveCommitted = false;
     result = null;
     analysisName = '';
     error = null;
@@ -362,7 +502,7 @@ class MainViewModel extends ChangeNotifier {
   }
 
   void setAnalysisName(String value) {
-    if (processing || saving || result != null) return;
+    if (processing || saving || result != null || _saveCommitted) return;
     if (analysisName.trim() != value.trim()) {
       _operationKey = null;
       result = null;
@@ -390,6 +530,8 @@ class MainViewModel extends ChangeNotifier {
     historyError = null;
     result = null;
     preview = null;
+    activePendingId = null;
+    _saveCommitted = false;
     saving = false;
     _sessionImages.clear();
     error = null;
