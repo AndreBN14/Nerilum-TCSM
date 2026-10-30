@@ -1,0 +1,1077 @@
+openapi: 3.1.0
+info:
+  title: Nerilum API
+  version: 0.1.0
+  description: 'API de análisis de imágenes de resonancia magnética con el modelo ONNX YOLOv8n-cls.
+
+
+    La autenticación la gestiona Supabase Auth. El backend solo verifica el JWT ES256 mediante JWKS y
+    deriva el `account_id` del claim `sub`; no implementa registro, login, refresh ni logout.
+
+
+    Todas las respuestas de error usan el formato `{"error": {"code": "...", "message": "..."}}`.
+
+
+    **Aviso legal:** Resultado orientativo. No constituye un diagnóstico médico.'
+paths:
+  /api/v1/health:
+    get:
+      tags:
+      - health
+      summary: Estado de la API y del modelo
+      operationId: health_api_v1_health_get
+      responses:
+        '200':
+          description: Estado actual de la API.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                example:
+                  summary: API disponible
+                  value:
+                    status: ok
+                    model_ready: true
+                    model_name: yolov8n-cls
+                    model_version: v0.1
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      description: Endpoint público. Indica si el modelo está cargado y, si lo está, su nombre y versión.
+      security: []
+  /api/v1/auth/me:
+    get:
+      tags:
+      - auth
+      summary: Identidad del usuario autenticado
+      operationId: me_api_v1_auth_me_get
+      responses:
+        '200':
+          description: Identidad del JWT validado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountResponse'
+              examples:
+                example:
+                  summary: Cuenta autenticada
+                  value:
+                    account:
+                      id: 3f9b1c2d-4e5f-6789-abcd-ef0123456789
+                      email: ana@correo.com
+        '401':
+          description: Token ausente, inválido o expirado (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            WWW-Authenticate:
+              description: Esquema de autenticación esperado.
+              schema:
+                type: string
+                example: Bearer
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio o JWKS no disponible. Incluye `Retry-After` (`service_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debe esperar antes de reintentar.
+              schema:
+                type: integer
+                minimum: 1
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+      description: Devuelve el `id` (UUID) y el `email` derivados del JWT de Supabase ya verificado. No
+        crea ni modifica cuentas.
+  /api/v1/analyses:
+    post:
+      tags:
+      - analyses
+      summary: Analizar y guardar en una operación (legado)
+      operationId: create_analysis_api_v1_analyses_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            minLength: 1
+            maxLength: 128
+            pattern: ^[A-Za-z0-9._:-]+$
+          - type: 'null'
+          description: Clave única por operación y usuario. Conservarla al reintentar.
+          title: Idempotency-Key
+        description: Clave única por operación y usuario. Conservarla al reintentar.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AnalysisUpload'
+        description: Imagen a analizar y nombre opcional del resultado.
+      responses:
+        '201':
+          description: Análisis creado y guardado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisOut'
+              examples:
+                example:
+                  summary: Análisis creado
+                  value:
+                    id: an_1a2b3c4d5e6f
+                    category: NonDemented
+                    created_at: '2026-10-09T15:30:00Z'
+                    display_name: MRI 1
+                    probability: 0.9274
+                    scores:
+                      NonDemented: 0.9274
+                      VeryMildDemented: 0.0404
+                      MildDemented: 0.021
+                      ModerateDemented: 0.0112
+                    is_demo: false
+                    model:
+                      name: yolov8n-cls
+                      version: v0.1
+                      dataset: ADNI
+                    disclaimer: Resultado orientativo. No constituye un diagnóstico médico.
+        '401':
+          description: Token ausente, inválido o expirado (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            WWW-Authenticate:
+              description: Esquema de autenticación esperado.
+              schema:
+                type: string
+                example: Bearer
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Modelo no disponible o JWKS inaccesible. Incluye `Retry-After` (`model_unavailable`
+            o `service_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debe esperar antes de reintentar.
+              schema:
+                type: integer
+                minimum: 1
+        '409':
+          description: La misma `Idempotency-Key` se usó con otro contenido (`idempotency_conflict`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Cuerpo o parámetros inválidos (`validation_error`), incluido un `display_name`
+            inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: El archivo no se puede decodificar como imagen (`invalid_image`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: El archivo supera el tamaño máximo (`too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: El archivo no es JPG/JPEG ni PNG (`unsupported_media_type`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      description: 'Flujo compatible con APK anteriores. Valida la imagen, ejecuta la inferencia y persiste
+        el resultado en una sola operación.
+
+
+        Si se envía `Idempotency-Key`, un reintento con la misma clave y el mismo contenido devuelve el
+        resultado original; con contenido distinto responde `409 idempotency_conflict`. La imagen no se
+        guarda.'
+    get:
+      tags:
+      - analyses
+      summary: Listar el historial de análisis
+      operationId: list_analyses_api_v1_analyses_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+        description: Máximo de elementos por página (1-100).
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+        description: Elementos a omitir antes de la página.
+      - name: sort
+        in: query
+        required: false
+        schema:
+          $ref: '#/components/schemas/HistorySort'
+          description: newest, oldest, nameAZ o probability; se aplica antes de paginar.
+          default: newest
+        description: 'Orden del historial: `newest`, `oldest`, `nameAZ` o `probability`.'
+      responses:
+        '200':
+          description: Página de historial.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisList'
+              examples:
+                example:
+                  summary: Historial con un elemento
+                  value:
+                    items:
+                    - id: an_1a2b3c4d5e6f
+                      category: NonDemented
+                      created_at: '2026-10-09T15:30:00Z'
+                      display_name: MRI 1
+                      probability: 0.9274
+                      scores:
+                        NonDemented: 0.9274
+                        VeryMildDemented: 0.0404
+                        MildDemented: 0.021
+                        ModerateDemented: 0.0112
+                      is_demo: false
+                      model_name: yolov8n-cls
+                      model_version: yolov8n-cls@v0.1
+                      model_dataset: ADNI
+                    total: 1
+                    limit: 50
+                    offset: 0
+        '401':
+          description: Token ausente, inválido o expirado (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            WWW-Authenticate:
+              description: Esquema de autenticación esperado.
+              schema:
+                type: string
+                example: Bearer
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio o JWKS no disponible. Incluye `Retry-After` (`service_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debe esperar antes de reintentar.
+              schema:
+                type: integer
+                minimum: 1
+        '422':
+          description: Parámetros de paginación u orden inválidos (`validation_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      description: Devuelve solo los análisis de la cuenta autenticada. El orden se aplica en la base
+        de datos antes de paginar. Funciona aunque el modelo no esté disponible.
+  /api/v1/analyses/preview:
+    post:
+      tags:
+      - analyses
+      summary: Analizar una imagen sin guardar
+      operationId: preview_analysis_api_v1_analyses_preview_post
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AnalysisPreviewUpload'
+        required: true
+        description: Imagen a previsualizar.
+      responses:
+        '200':
+          description: Resultado de inferencia no persistido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisPreview'
+              examples:
+                example:
+                  summary: Previsualización con comprobante
+                  value:
+                    preview_id: an_0123456789abcdef0123456789abcdef
+                    category: VeryMildDemented
+                    created_at: '2026-10-24T15:30:00Z'
+                    expires_at: '2026-10-24T16:00:00Z'
+                    probability: 0.72
+                    scores:
+                      NonDemented: 0.08
+                      VeryMildDemented: 0.72
+                      MildDemented: 0.16
+                      ModerateDemented: 0.04
+                    model:
+                      name: yolov8n-cls
+                      version: v0.1
+                      dataset: ADNI
+                    save_proof: <comprobante opaco firmado>
+                    disclaimer: Resultado orientativo. No constituye un diagnóstico médico.
+        '401':
+          description: Token ausente, inválido o expirado (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            WWW-Authenticate:
+              description: Esquema de autenticación esperado.
+              schema:
+                type: string
+                example: Bearer
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Modelo no disponible o previsualización sin configurar. Incluye `Retry-After` (`service_unavailable`
+            o `model_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debe esperar antes de reintentar.
+              schema:
+                type: integer
+                minimum: 1
+        '422':
+          description: Parámetros inválidos (`validation_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: El archivo no se puede decodificar como imagen (`invalid_image`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: El archivo supera el tamaño máximo (`too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '415':
+          description: El archivo no es JPG/JPEG ni PNG (`unsupported_media_type`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - HTTPBearer: []
+      description: Ejecuta la inferencia y devuelve el resultado junto con un comprobante firmado (`save_proof`).
+        No inserta en el historial ni almacena la imagen. El comprobante caduca a los 30 minutos. Requiere
+        `ANALYSIS_PROOF_SECRET` en el servidor.
+  /api/v1/analyses/save:
+    post:
+      tags:
+      - analyses
+      summary: Guardar un resultado previsualizado
+      operationId: save_analysis_api_v1_analyses_save_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveAnalysisRequest'
+            examples:
+              example:
+                summary: Guardar una previsualización
+                value:
+                  save_proof: <comprobante opaco firmado>
+                  display_name: MRI 1
+        required: true
+        description: Comprobante de previsualización y nombre opcional del análisis.
+      responses:
+        '201':
+          description: Análisis guardado por primera vez.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisOut'
+              examples:
+                example:
+                  summary: Análisis guardado
+                  value:
+                    id: an_1a2b3c4d5e6f
+                    category: NonDemented
+                    created_at: '2026-10-09T15:30:00Z'
+                    display_name: MRI 1
+                    probability: 0.9274
+                    scores:
+                      NonDemented: 0.9274
+                      VeryMildDemented: 0.0404
+                      MildDemented: 0.021
+                      ModerateDemented: 0.0112
+                    is_demo: false
+                    model:
+                      name: yolov8n-cls
+                      version: v0.1
+                      dataset: ADNI
+                    disclaimer: Resultado orientativo. No constituye un diagnóstico médico.
+        '401':
+          description: Token ausente, inválido o expirado (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            WWW-Authenticate:
+              description: Esquema de autenticación esperado.
+              schema:
+                type: string
+                example: Bearer
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: '`ANALYSIS_PROOF_SECRET` no configurado o JWKS inaccesible. Incluye `Retry-After`
+            (`service_unavailable`).'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debe esperar antes de reintentar.
+              schema:
+                type: integer
+                minimum: 1
+        '409':
+          description: El comprobante ya se guardó con otro nombre (`idempotency_conflict`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Comprobante alterado, malformado o caducado; o `display_name` inválido (`validation_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '200':
+          description: El comprobante ya estaba guardado; se devuelve el original.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisOut'
+              examples:
+                example:
+                  summary: Reintento idempotente
+                  value:
+                    id: an_1a2b3c4d5e6f
+                    category: NonDemented
+                    created_at: '2026-10-09T15:30:00Z'
+                    display_name: MRI 1
+                    probability: 0.9274
+                    scores:
+                      NonDemented: 0.9274
+                      VeryMildDemented: 0.0404
+                      MildDemented: 0.021
+                      ModerateDemented: 0.0112
+                    is_demo: false
+                    model:
+                      name: yolov8n-cls
+                      version: v0.1
+                      dataset: ADNI
+                    disclaimer: Resultado orientativo. No constituye un diagnóstico médico.
+      security:
+      - HTTPBearer: []
+      description: Valida la firma, el usuario y la caducidad de `save_proof` y guarda el resultado sin
+        repetir la inferencia. `preview_id` es el ID inmutable del análisis. Repetir la operación con
+        el mismo comprobante y nombre devuelve `200`; reutilizarlo con otro nombre responde `409 idempotency_conflict`.
+  /api/v1/analyses/{analysis_id}:
+    get:
+      tags:
+      - analyses
+      summary: Obtener un análisis propio
+      operationId: get_analysis_api_v1_analyses__analysis_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+        description: Identificador del análisis (`an_...`).
+      responses:
+        '200':
+          description: Detalle del análisis.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisOut'
+              examples:
+                example:
+                  summary: Análisis consultado
+                  value:
+                    id: an_1a2b3c4d5e6f
+                    category: NonDemented
+                    created_at: '2026-10-09T15:30:00Z'
+                    display_name: MRI 1
+                    probability: 0.9274
+                    scores:
+                      NonDemented: 0.9274
+                      VeryMildDemented: 0.0404
+                      MildDemented: 0.021
+                      ModerateDemented: 0.0112
+                    is_demo: false
+                    model:
+                      name: yolov8n-cls
+                      version: v0.1
+                      dataset: ADNI
+                    disclaimer: Resultado orientativo. No constituye un diagnóstico médico.
+        '401':
+          description: Token ausente, inválido o expirado (`invalid_token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            WWW-Authenticate:
+              description: Esquema de autenticación esperado.
+              schema:
+                type: string
+                example: Bearer
+        '500':
+          description: Error interno no controlado (`internal_error`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Servicio o JWKS no disponible. Incluye `Retry-After` (`service_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              description: Segundos que el cliente debe esperar antes de reintentar.
+              schema:
+                type: integer
+                minimum: 1
+        '405':
+          description: Método no permitido en la ruta (`method_not_allowed`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Análisis inexistente o de otra cuenta (`not_found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      description: Devuelve el detalle de un análisis de la cuenta autenticada. Un ID inexistente o de
+        otra cuenta responde `404 not_found`.
+components:
+  schemas:
+    Account:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Email
+      type: object
+      required:
+      - id
+      title: Account
+      description: Identidad derivada del JWT validado; no de una tabla local.
+    AccountResponse:
+      properties:
+        account:
+          $ref: '#/components/schemas/Account'
+      type: object
+      required:
+      - account
+      title: AccountResponse
+    AnalysisList:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AnalysisSummary'
+          type: array
+          title: Items
+        total:
+          type: integer
+          title: Total
+        limit:
+          type: integer
+          title: Limit
+        offset:
+          type: integer
+          title: Offset
+      type: object
+      required:
+      - items
+      - total
+      - limit
+      - offset
+      title: AnalysisList
+      description: Página de historial del usuario autenticado.
+    AnalysisOut:
+      properties:
+        id:
+          type: string
+          title: Id
+          description: Identificador del análisis (`an_...`).
+          pattern: ^an_[0-9a-f]{12,64}$
+        category:
+          $ref: '#/components/schemas/Category'
+        created_at:
+          type: string
+          title: Created At
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$
+          examples:
+          - '2026-10-09T15:30:00Z'
+          description: Fecha ISO-8601 UTC con segundos (`YYYY-MM-DDTHH:MM:SSZ`).
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+          description: Nombre opcional recortado; `null` si está vacío. Máximo 120 caracteres.
+        probability:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Probability
+          description: Puntuación de la categoría ganadora; no es una probabilidad clínica calibrada.
+        scores:
+          $ref: '#/components/schemas/Scores'
+          description: Puntuación de las cuatro clases.
+        is_demo:
+          type: boolean
+          title: Is Demo
+          default: false
+        model:
+          $ref: '#/components/schemas/ModelMetadata'
+        disclaimer:
+          type: string
+          title: Disclaimer
+          default: Resultado orientativo. No constituye un diagnóstico médico.
+      type: object
+      required:
+      - id
+      - category
+      - created_at
+      - probability
+      - scores
+      - model
+      title: AnalysisOut
+      description: Análisis completo devuelto al crear, guardar o consultar un resultado.
+    AnalysisPreview:
+      properties:
+        preview_id:
+          type: string
+          title: Preview Id
+          description: ID que tendrá el análisis si se guarda.
+        category:
+          $ref: '#/components/schemas/Category'
+        created_at:
+          type: string
+          title: Created At
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$
+          examples:
+          - '2026-10-09T15:30:00Z'
+          description: Fecha ISO-8601 UTC con segundos (`YYYY-MM-DDTHH:MM:SSZ`).
+        expires_at:
+          type: string
+          title: Expires At
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$
+          examples:
+          - '2026-10-09T15:30:00Z'
+          description: Fecha ISO-8601 UTC con segundos (`YYYY-MM-DDTHH:MM:SSZ`).
+        probability:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Probability
+          description: Puntuación de la categoría ganadora; no es una probabilidad clínica calibrada.
+        scores:
+          $ref: '#/components/schemas/Scores'
+          description: Puntuación de las cuatro clases.
+        model:
+          $ref: '#/components/schemas/ModelMetadata'
+        save_proof:
+          type: string
+          title: Save Proof
+          description: Comprobante opaco firmado con HMAC-SHA256. Se envía sin modificar a `POST /analyses/save`.
+        disclaimer:
+          type: string
+          title: Disclaimer
+          default: Resultado orientativo. No constituye un diagnóstico médico.
+      type: object
+      required:
+      - preview_id
+      - category
+      - created_at
+      - expires_at
+      - probability
+      - scores
+      - model
+      - save_proof
+      title: AnalysisPreview
+      description: Resultado de inferencia no persistido y su comprobante firmado para guardar.
+    AnalysisSummary:
+      properties:
+        id:
+          type: string
+          title: Id
+          description: Identificador del análisis (`an_...`).
+          pattern: ^an_[0-9a-f]{12,64}$
+        category:
+          $ref: '#/components/schemas/Category'
+        created_at:
+          type: string
+          title: Created At
+          pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$
+          examples:
+          - '2026-10-09T15:30:00Z'
+          description: Fecha ISO-8601 UTC con segundos (`YYYY-MM-DDTHH:MM:SSZ`).
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+          description: Nombre opcional recortado; `null` si está vacío. Máximo 120 caracteres.
+        probability:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Probability
+          description: Puntuación de la categoría ganadora; no es una probabilidad clínica calibrada.
+        scores:
+          $ref: '#/components/schemas/Scores'
+          description: Puntuación de las cuatro clases.
+        is_demo:
+          type: boolean
+          title: Is Demo
+          default: false
+        model_name:
+          type: string
+          title: Model Name
+        model_version:
+          type: string
+          title: Model Version
+          description: Formato `name@version`.
+        model_dataset:
+          type: string
+          title: Model Dataset
+      type: object
+      required:
+      - id
+      - category
+      - created_at
+      - probability
+      - scores
+      - model_name
+      - model_version
+      - model_dataset
+      title: AnalysisSummary
+      description: Elemento del historial; no incluye `disclaimer`.
+    Category:
+      type: string
+      enum:
+      - NonDemented
+      - VeryMildDemented
+      - MildDemented
+      - ModerateDemented
+      title: Category
+      description: Clases del clasificador; el orden coincide con el modelo.
+    ErrorDetail:
+      properties:
+        code:
+          type: string
+          title: Code
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - code
+      - message
+      title: ErrorDetail
+      description: Código estable del contrato y mensaje legible para el cliente.
+    ErrorResponse:
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      type: object
+      required:
+      - error
+      title: ErrorResponse
+      description: Formato único de error de todas las rutas.
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          const: ok
+          title: Status
+          default: ok
+        model_ready:
+          type: boolean
+          title: Model Ready
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Name
+        model_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model Version
+      type: object
+      required:
+      - model_ready
+      title: HealthResponse
+      description: Estado de la API y disponibilidad del modelo.
+    HistorySort:
+      type: string
+      enum:
+      - newest
+      - oldest
+      - nameAZ
+      - probability
+      title: HistorySort
+    ModelMetadata:
+      properties:
+        name:
+          type: string
+          title: Name
+        version:
+          type: string
+          title: Version
+        dataset:
+          type: string
+          title: Dataset
+      type: object
+      required:
+      - name
+      - version
+      - dataset
+      title: ModelMetadata
+      description: Identidad del modelo que produjo el resultado.
+    SaveAnalysisRequest:
+      properties:
+        save_proof:
+          type: string
+          maxLength: 8192
+          minLength: 1
+          title: Save Proof
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+          maxLength: 120
+          description: Nombre opcional; se recorta y un valor vacío queda en `null`. Máximo 120 caracteres,
+            sin caracteres de control.
+      type: object
+      required:
+      - save_proof
+      title: SaveAnalysisRequest
+      description: Comprobante emitido por `POST /analyses/preview` y nombre opcional.
+    Scores:
+      properties:
+        NonDemented:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Nondemented
+        VeryMildDemented:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Verymilddemented
+        MildDemented:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Milddemented
+        ModerateDemented:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Moderatedemented
+      additionalProperties: false
+      type: object
+      required:
+      - NonDemented
+      - VeryMildDemented
+      - MildDemented
+      - ModerateDemented
+      title: Scores
+      description: 'Puntuaciones por clase.
+
+
+        Los nombres de los campos son, a propósito, los valores de ``Category`` en
+
+        PascalCase (el resto del JSON es snake_case). ``extra="forbid"`` hace
+
+        visible cualquier desincronización con el modelo en vez de ignorarla en
+
+        silencio. El orden de los campos sigue el del enum para que el JSON sea
+
+        estable.'
+    AnalysisUpload:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+          description: Imagen JPG/JPEG o PNG de hasta 10 MB.
+        display_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Display Name
+          description: Nombre opcional; se recorta y un valor vacío queda en `null`. Máximo 120 caracteres,
+            sin caracteres de control.
+          maxLength: 120
+      type: object
+      required:
+      - file
+      title: AnalysisUpload
+      description: Imagen que se analizará. Se valida por firma de archivo (JPG/JPEG o PNG), no por extensión
+        ni `Content-Type`.
+    AnalysisPreviewUpload:
+      properties:
+        file:
+          type: string
+          contentMediaType: application/octet-stream
+          title: File
+          description: Imagen JPG/JPEG o PNG de hasta 10 MB.
+      type: object
+      required:
+      - file
+      title: AnalysisPreviewUpload
+      description: Imagen que se analizará. Se valida por firma de archivo (JPG/JPEG o PNG), no por extensión
+        ni `Content-Type`.
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      description: JWT de acceso emitido por Supabase Auth (ES256). Introduce solo el access_token; Swagger
+        añade el prefijo 'Bearer '.
+      scheme: bearer
+      bearerFormat: JWT
+servers:
+- url: http://127.0.0.1:8000
+  description: Servidor local de desarrollo. En producción debe usarse la URL HTTPS del backend desplegado.
+tags:
+- name: health
+  description: Estado público de la API y del modelo de inferencia.
+- name: auth
+  description: Identidad derivada del JWT verificado de Supabase Auth.
+- name: analyses
+  description: Inferencia, guardado e historial de análisis. Todos los recursos están aislados por la
+    cuenta autenticada.
