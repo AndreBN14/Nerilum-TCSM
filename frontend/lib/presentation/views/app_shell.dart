@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../domain/models/analysis_result.dart';
 import '../../domain/models/history_sort.dart';
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 import '../widgets/brand_backdrop.dart';
 import 'analysis_view.dart';
 import 'history_view.dart';
 import 'report_detail_page.dart';
+import 'preview_result_page.dart';
 import 'home_view.dart';
 import 'profile_view.dart';
 
@@ -72,6 +73,30 @@ class AppShell extends StatelessWidget {
     );
   }
 
+  Future<void> _analyze(BuildContext context) async {
+    final model = AppScope.of(context).mainViewModel;
+    await model.analyze();
+    if (!context.mounted) return;
+    if (model.preview != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PreviewResultPage(
+            model: model,
+            onSaved: (saved) {
+              Navigator.of(context).pop();
+              model.removeImage();
+              _openAnalysis(context, saved);
+            },
+          ),
+        ),
+      );
+    } else if (model.result != null && model.previewImage == null) {
+      final saved = model.result!;
+      model.removeImage();
+      _openAnalysis(context, saved);
+    }
+  }
+
   Future<void> _confirmLogout(BuildContext context) async {
     final logout = await showDialog<bool>(
       context: context,
@@ -121,19 +146,12 @@ class AppShell extends StatelessWidget {
               ),
               1 => AnalysisView(
                 image: model.image,
-                result: model.result,
-                preview: model.preview,
-                saving: model.saving,
-                onSave: model.savePreview,
-                onDiscard: model.discardPreview,
                 error: model.error,
                 processing: model.processing,
                 onBack: () => model.selectTab(0),
                 onPick: model.pickImage,
                 onRemove: model.removeImage,
-                onAnalyze: model.analyze,
-                analysisName: model.analysisName,
-                onNameChanged: model.setAnalysisName,
+                onAnalyze: () => _analyze(context),
               ),
               _ => ProfileView(
                 account: model.account,

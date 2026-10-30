@@ -241,6 +241,7 @@ class MainViewModel extends ChangeNotifier {
     if (saving || processing) return;
     preview = null;
     result = null;
+    analysisName = '';
     error = null;
     notifyListeners();
   }

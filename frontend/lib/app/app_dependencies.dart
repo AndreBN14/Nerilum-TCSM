@@ -6,6 +6,7 @@ import '../data/datasources/mock_session_data_source.dart';
 import '../data/datasources/mock_analysis_data_source.dart';
 import '../data/repositories/local_appearance_repository.dart';
 import '../data/repositories/pdf_report_repository.dart';
+import '../data/repositories/printing_report_output_repository.dart';
 import '../data/repositories/local_image_repository.dart';
 import '../data/repositories/local_history_sort_repository.dart';
 import '../data/repositories/mock_account_repository.dart';
@@ -16,6 +17,7 @@ import '../domain/repositories/analysis_repository.dart';
 import '../domain/repositories/preview_repository.dart';
 import '../domain/usecases/preview_use_cases.dart';
 import '../domain/usecases/generate_report.dart';
+import '../domain/usecases/present_report.dart';
 import '../domain/repositories/appearance_repository.dart';
 import '../domain/repositories/image_repository.dart';
 import '../domain/repositories/history_sort_repository.dart';
@@ -118,8 +120,10 @@ class AppDependencies {
     resendConfirmation: ResendConfirmation(accountRepository),
   );
 
-  ReportViewModel createReportViewModel() =>
-      ReportViewModel(GenerateReport(const PdfReportRepository()));
+  ReportViewModel createReportViewModel() => ReportViewModel(
+    GenerateReport(const PdfReportRepository()),
+    PresentReport(const PrintingReportOutputRepository()),
+  );
 
   void dispose() {
     appearanceViewModel.dispose();

@@ -4,7 +4,7 @@ import 'package:pdf/widgets.dart' as pw;
 
 import '../../domain/models/analysis_result.dart';
 import '../../domain/repositories/report_repository.dart';
-import '../../domain/formatters/score_text.dart';
+import '../../core/utils/score_text.dart';
 
 class PdfReportRepository implements ReportRepository {
   const PdfReportRepository();
@@ -89,15 +89,53 @@ class PdfReportRepository implements ReportRepository {
             style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
           ),
           if (complete)
-            pw.TableHelper.fromTextArray(
-              headers: ['Clase del dataset', 'Puntuación'],
-              data: [
-                for (final name in categories)
-                  [name, scoreText(analysis.scores[name]!)],
-              ],
-              cellStyle: const pw.TextStyle(fontSize: 10),
-              headerDecoration: pw.BoxDecoration(
-                color: PdfColor.fromInt(0xFFDCF0E2),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400),
+                borderRadius: pw.BorderRadius.circular(12),
+              ),
+              child: pw.Column(
+                children: [
+                  for (final name in categories)
+                    pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(vertical: 7),
+                      child: pw.Row(
+                        children: [
+                          pw.SizedBox(
+                            width: 122,
+                            child: pw.Text(
+                              name,
+                              style: const pw.TextStyle(fontSize: 10),
+                            ),
+                          ),
+                          pw.SizedBox(width: 10),
+                          pw.Container(
+                            width: 150,
+                            height: 12,
+                            color: PdfColors.grey300,
+                            alignment: pw.Alignment.centerLeft,
+                            child: pw.Container(
+                              width:
+                                  150 * analysis.scores[name]!.clamp(0.0, 1.0),
+                              height: 12,
+                              color: name == analysis.category
+                                  ? PdfColor.fromInt(0xFFC6F2D5)
+                                  : PdfColor.fromInt(0xFF8CB9A2),
+                            ),
+                          ),
+                          pw.SizedBox(width: 10),
+                          pw.Expanded(
+                            child: pw.Text(
+                              scoreText(analysis.scores[name]!),
+                              textAlign: pw.TextAlign.right,
+                              style: const pw.TextStyle(fontSize: 10),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             )
           else

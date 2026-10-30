@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app/app_scope.dart';
 import '../../domain/models/account.dart';
 import '../../domain/models/appearance.dart';
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 import '../widgets/main_components.dart';
 
 class ProfileView extends StatelessWidget {

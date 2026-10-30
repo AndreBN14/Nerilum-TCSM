@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/models/analysis_result.dart';
 import '../../domain/models/history_sort.dart';
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 import '../widgets/history_sort_control.dart';
 import '../widgets/history_status.dart';
 import '../widgets/main_components.dart';

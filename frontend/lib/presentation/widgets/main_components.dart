@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models/analysis_result.dart';
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 import 'brand_backdrop.dart';
 
 class MainPageWidth extends StatelessWidget {

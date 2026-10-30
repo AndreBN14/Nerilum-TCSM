@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frontend/app/app_dependencies.dart';
-import 'package:frontend/domain/formatters/score_text.dart';
+import 'package:frontend/core/utils/score_text.dart';
 import 'package:frontend/domain/models/analysis_result.dart';
 import 'package:frontend/domain/models/selected_image.dart';
 import 'package:frontend/domain/repositories/analysis_repository.dart';

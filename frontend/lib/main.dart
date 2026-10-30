@@ -18,7 +18,7 @@ import 'presentation/views/auth_screen.dart';
 import 'presentation/views/app_shell.dart';
 import 'presentation/views/splash_screen.dart';
 import 'presentation/views/welcome_screen.dart';
-import 'presentation/theme/nerilum_theme.dart';
+import 'core/theme/nerilum_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

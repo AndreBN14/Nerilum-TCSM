@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../app/app_scope.dart';
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 import '../widgets/brand_backdrop.dart';
 
 class SplashScreen extends StatefulWidget {

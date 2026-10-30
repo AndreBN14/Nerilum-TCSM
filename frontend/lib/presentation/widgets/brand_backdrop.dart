@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 
 class BrandBackdrop extends StatelessWidget {
   const BrandBackdrop({super.key, required this.child});

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/models/history_sort.dart';
-import '../theme/nerilum_theme.dart';
+import '../../core/theme/nerilum_theme.dart';
 
 class HistorySortControl extends StatelessWidget {
   const HistorySortControl({

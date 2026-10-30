@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:printing/printing.dart';
 
 import '../../app/app_scope.dart';
 import '../../domain/models/analysis_result.dart';
@@ -38,33 +37,15 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
   }
 
   Future<void> _export({bool share = false}) async {
-    final bytes = await _report!.create(
+    final success = await _report!.export(
       widget.result,
       imageBytes: widget.imageBytes,
+      share: share,
     );
     if (!mounted) return;
-    if (bytes == null) {
+    if (!success && _report!.error != null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(_report!.error!)));
-      return;
-    }
-    final rawName = widget.result.displayName ?? 'analisis_nerilum';
-    final safeName = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
-    final filename = '${safeName.isEmpty ? 'analisis_nerilum' : safeName}.pdf';
-    try {
-      if (share) {
-        await Printing.sharePdf(bytes: bytes, filename: filename);
-      } else {
-        await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No se pudo abrir el PDF. Inténtalo de nuevo.'),
-          ),
-        );
-      }
     }
   }
 

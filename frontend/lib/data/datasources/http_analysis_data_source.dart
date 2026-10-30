@@ -7,7 +7,7 @@ import '../../domain/models/analysis_result.dart';
 import '../../domain/models/analysis_preview.dart';
 import '../../domain/models/selected_image.dart';
 import '../../domain/repositories/analysis_repository.dart';
-import '../dto/analysis_result_dto.dart';
+import '../models/analysis_result_dto.dart';
 
 class HttpAnalysisDataSource {
   HttpAnalysisDataSource({
