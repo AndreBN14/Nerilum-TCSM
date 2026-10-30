@@ -110,6 +110,10 @@ void main() {
     await model.pickImage();
     await model.analyze();
     expect(model.canQueueImage, isTrue);
+    expect(
+      model.error,
+      'No se pudo completar la conexión. Inténtalo más tarde o guarda la imagen como pendiente.',
+    );
     expect(queue.items, isEmpty);
     expect(await model.enqueueSelected(), isTrue);
     expect(model.image, isNull);
@@ -118,5 +122,22 @@ void main() {
     await model.logout();
     expect(model.pendingAnalyses, isEmpty);
     expect(queue.items, hasLength(1));
+  });
+
+  test('Si no existe cola no invita a guardar una imagen pendiente', () async {
+    final deps = AppDependencies(
+      images: _Image(),
+      analysis: _OfflineAnalysis(),
+    );
+    addTearDown(deps.dispose);
+    await deps.accountRepository.login('demo@nerilum.app', 'Demo1234');
+    final model = deps.mainViewModel;
+    await model.pickImage();
+    await model.analyze();
+    expect(model.canQueueImage, isFalse);
+    expect(
+      model.error,
+      'No se pudo completar la conexión. Inténtalo más tarde.',
+    );
   });
 }

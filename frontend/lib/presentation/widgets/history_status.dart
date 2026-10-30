@@ -6,11 +6,13 @@ class HistoryStatus extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onRetry,
+    this.showRetryButton = true,
   });
 
   final bool loading;
   final String? error;
   final VoidCallback onRetry;
+  final bool showRetryButton;
 
   @override
   Widget build(BuildContext context) {
@@ -30,6 +32,7 @@ class HistoryStatus extends StatelessWidget {
         ),
       );
     }
+    if (!showRetryButton && error == null) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -41,13 +44,14 @@ class HistoryStatus extends StatelessWidget {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
-        TextButton.icon(
-          onPressed: onRetry,
-          icon: const Icon(Icons.refresh),
-          label: Text(
-            error == null ? 'Actualizar historial' : 'Reintentar historial',
+        if (showRetryButton)
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: Text(
+              error == null ? 'Actualizar historial' : 'Reintentar historial',
+            ),
           ),
-        ),
       ],
     );
   }

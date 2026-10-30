@@ -169,6 +169,7 @@ void main() {
     remote.dropFirstSaveResponse = true;
     await model.savePreview();
     expect(model.preview, isNotNull);
+    expect(model.error, 'Respuesta perdida');
     expect((await queue.find(pending.ownerId, pending.id))!.status, 'saving');
     model.setAnalysisName('Otro');
     expect(model.analysisName, 'Control');

@@ -40,26 +40,34 @@ class HomeView extends StatelessWidget {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(24, 20, 24, 30),
         children: [
-          Row(
-            children: [
-              Image.asset(
-                'assets/nerilum-mark-512.png',
-                width: 42,
-                height: 42,
-                color: Theme.of(context).brightness == Brightness.light
-                    ? colors.mint
-                    : null,
-                colorBlendMode: BlendMode.srcIn,
-              ),
-              const SizedBox(width: 10),
-              const Text('N E R I L U M', style: TextStyle(fontSize: 14)),
-              const Spacer(),
-              IconButton.outlined(
-                tooltip: 'Mi perfil',
-                onPressed: onProfile,
-                icon: const Icon(Icons.person_outline),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                Image.asset(
+                  'assets/nerilum-mark-512.png',
+                  width: 42,
+                  height: 42,
+                  color: Theme.of(context).brightness == Brightness.light
+                      ? colors.mint
+                      : null,
+                  colorBlendMode: BlendMode.srcIn,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  constraints.maxWidth < 300 ? 'NERILUM' : 'N E R I L U M',
+                  style: TextStyle(
+                    fontSize: 14,
+                    letterSpacing: constraints.maxWidth < 300 ? 2 : 0,
+                  ),
+                ),
+                const Spacer(),
+                IconButton.outlined(
+                  tooltip: 'Mi perfil',
+                  onPressed: onProfile,
+                  icon: const Icon(Icons.person_outline),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 52),
           Text(
@@ -79,24 +87,50 @@ class HomeView extends StatelessWidget {
             onPressed: onSelectImage,
           ),
           const SizedBox(height: 44),
+          LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Análisis recientes',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                if (constraints.maxWidth < 300)
+                  TextButton(
+                    onPressed: onHistory,
+                    child: const Text('Ver todo'),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: onHistory,
+                    label: const Text('Ver todo'),
+                    icon: const Icon(Icons.arrow_forward, size: 18),
+                    iconAlignment: IconAlignment.end,
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
-              const Expanded(
-                child: Text(
-                  'Análisis recientes',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+              Expanded(
+                child: HistorySortControl(
+                  value: historySort,
+                  onChanged: onSortChanged,
+                  compact: true,
                 ),
               ),
-              TextButton.icon(
-                onPressed: onHistory,
-                label: const Text('Ver todo'),
-                icon: const Icon(Icons.arrow_forward, size: 18),
-                iconAlignment: IconAlignment.end,
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: historyError == null
+                    ? 'Actualizar historial'
+                    : 'Reintentar historial',
+                onPressed: historyLoading ? null : onRefreshHistory,
+                icon: const Icon(Icons.refresh),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          HistorySortControl(value: historySort, onChanged: onSortChanged),
           if (analyses.any((record) => record.isDemo)) ...[
             const SizedBox(height: 6),
             const DemoHistoryNotice(),
@@ -106,6 +140,7 @@ class HomeView extends StatelessWidget {
             loading: historyLoading,
             error: historyError,
             onRetry: onRefreshHistory,
+            showRetryButton: false,
           ),
           if (analyses.isEmpty && !historyLoading && historyError == null)
             EmptyHistory(onSelect: onSelectImage)

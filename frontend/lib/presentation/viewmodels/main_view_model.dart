@@ -208,10 +208,12 @@ class MainViewModel extends ChangeNotifier {
     } on AnalysisUnavailable catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;
-    } on AnalysisNetworkFailure catch (failure) {
+    } on AnalysisNetworkFailure {
       if (_disposed || session != _sessionVersion) return;
-      error = failure.message;
       canQueueImage = pendingRepository != null;
+      error = canQueueImage
+          ? 'No se pudo completar la conexión. Inténtalo más tarde o guarda la imagen como pendiente.'
+          : 'No se pudo completar la conexión. Inténtalo más tarde.';
     } on AnalysisFailure catch (failure) {
       if (_disposed || session != _sessionVersion) return;
       error = failure.message;

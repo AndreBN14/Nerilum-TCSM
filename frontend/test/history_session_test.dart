@@ -108,9 +108,9 @@ void main() {
       expect(find.text('Exploración inicial'), findsOneWidget);
       expect(find.text('MildDemented'), findsNothing);
 
-      await tester.tap(find.text('Más recientes'));
+      await tester.tap(find.text('Recientes'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Probabilidad').last);
+      await tester.tap(find.text('Puntuación').last);
       await tester.pumpAndSettle();
       expect(
         reopened.mainViewModel.analyses.first.displayName,

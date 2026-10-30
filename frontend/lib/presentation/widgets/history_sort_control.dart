@@ -8,41 +8,65 @@ class HistorySortControl extends StatelessWidget {
     super.key,
     required this.value,
     required this.onChanged,
+    this.compact = false,
   });
 
   final HistorySort value;
   final ValueChanged<HistorySort> onChanged;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final colors = NerilumPalette.of(context);
     return Row(
       children: [
-        Text('Ordenar:', style: TextStyle(color: colors.textSecondary)),
-        const SizedBox(width: 12),
+        Text(
+          compact ? 'Orden:' : 'Ordenar:',
+          style: TextStyle(color: colors.textSecondary),
+        ),
+        SizedBox(width: compact ? 6 : 12),
         Expanded(
           child: DropdownButton<HistorySort>(
             value: value,
             isExpanded: true,
             underline: const SizedBox.shrink(),
-            items: const [
-              DropdownMenuItem(
-                value: HistorySort.newest,
-                child: Text('Más recientes'),
-              ),
-              DropdownMenuItem(
-                value: HistorySort.oldest,
-                child: Text('Más antiguos'),
-              ),
-              DropdownMenuItem(
-                value: HistorySort.nameAZ,
-                child: Text('Nombre A-Z'),
-              ),
-              DropdownMenuItem(
-                value: HistorySort.probability,
-                child: Text('Probabilidad'),
-              ),
-            ],
+            items: compact
+                ? const [
+                    DropdownMenuItem(
+                      value: HistorySort.newest,
+                      child: Text('Recientes'),
+                    ),
+                    DropdownMenuItem(
+                      value: HistorySort.oldest,
+                      child: Text('Antiguos'),
+                    ),
+                    DropdownMenuItem(
+                      value: HistorySort.nameAZ,
+                      child: Text('Nombre A-Z'),
+                    ),
+                    DropdownMenuItem(
+                      value: HistorySort.probability,
+                      child: Text('Puntuación'),
+                    ),
+                  ]
+                : const [
+                    DropdownMenuItem(
+                      value: HistorySort.newest,
+                      child: Text('Más recientes'),
+                    ),
+                    DropdownMenuItem(
+                      value: HistorySort.oldest,
+                      child: Text('Más antiguos'),
+                    ),
+                    DropdownMenuItem(
+                      value: HistorySort.nameAZ,
+                      child: Text('Nombre A-Z'),
+                    ),
+                    DropdownMenuItem(
+                      value: HistorySort.probability,
+                      child: Text('Probabilidad'),
+                    ),
+                  ],
             onChanged: (chosen) {
               if (chosen != null) onChanged(chosen);
             },
