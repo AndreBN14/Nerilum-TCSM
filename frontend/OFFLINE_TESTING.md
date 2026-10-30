@@ -23,9 +23,13 @@ Solo está activa en Android, con `AUTH_MODE=supabase` y `API_BASE_URL` definida
 2. Seleccionar una imagen admisible y pulsar Analizar. Al fallar la conexión,
    aceptar **Guardar pendiente**. Reiniciar la app en modo avión: Historial debe
    mostrar el pendiente de esa cuenta, sin un resultado remoto inventado.
-3. Volver a tener conexión con la app abierta o reabrirla. Esperar hasta un minuto
-   o tocar el pendiente. Abrir la previsualización; salir sin guardar. La imagen
-   debe seguir como pendiente y no aparecer en el historial remoto.
+3. Volver a tener conexión con la app abierta o reabrirla. Al completarse la
+   previsualización debe aparecer **Resultado listo**: Ver resultado abre la
+   vista y Más tarde lo mantiene accesible desde Historial. Si la señal de red
+   no llega, el reintento al reabrir y cada minuto sirven de respaldo. El aviso
+   no debe repetirse para el mismo resultado ni aparecer por fallos de red.
+   Salir de la vista sin guardar conserva la imagen pendiente y no crea un
+   registro remoto.
 4. Volver a abrirlo, asignar nombre y confirmar Guardar. Comprobar un único
    registro en el historial remoto y que desaparece el pendiente local.
 5. Repetir con una cuenta distinta en el mismo dispositivo: ningún pendiente de

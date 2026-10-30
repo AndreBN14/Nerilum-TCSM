@@ -9,6 +9,7 @@ import 'app/app_dependencies.dart';
 import 'app/auth_configuration.dart';
 import 'app/api_configuration.dart';
 import 'data/datasources/http_analysis_data_source.dart';
+import 'data/datasources/connectivity_data_source.dart';
 import 'data/repositories/http_analysis_repository.dart';
 import 'data/datasources/supabase_account_data_source.dart';
 import 'data/repositories/supabase_account_repository.dart';
@@ -67,6 +68,9 @@ Future<void> main() async {
             : HttpAnalysisRepository(analysisSource),
         usesRemoteAnalysis: analysisSource != null,
         pendingAnalyses: pendingSource,
+        networkAvailability: pendingSource == null
+            ? null
+            : const ConnectivityDataSource().available,
         onDispose: () {
           analysisSource?.close();
           if (pendingSource != null) unawaited(pendingSource.close());

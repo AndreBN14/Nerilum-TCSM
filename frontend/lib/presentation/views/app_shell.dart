@@ -26,6 +26,11 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   Timer? _retryTimer;
+  StreamSubscription<bool>? _connectivitySubscription;
+  bool _retryingPending = false;
+  bool _noticeOpen = false;
+  bool _appActive = true;
+  final _notifiedPreviewIds = <String>{};
 
   @override
   void initState() {
@@ -41,47 +46,139 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final availability = AppScope.of(context).networkAvailability;
+    _connectivitySubscription ??= availability?.listen(
+      (available) {
+        if (available && _appActive) _syncPending();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        // La comprobación al volver y el temporizador siguen disponibles.
+      },
+    );
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _syncPending();
+    _appActive = state == AppLifecycleState.resumed;
+    if (_appActive) _syncPending();
   }
 
   @override
   void dispose() {
     _retryTimer?.cancel();
+    _connectivitySubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   Future<void> _syncPending() async {
-    if (!mounted) return;
-    final model = AppScope.of(context).mainViewModel;
-    if (model.account == null ||
-        model.pendingRepository == null ||
-        model.processing ||
-        model.saving ||
-        model.preview != null) {
-      return;
-    }
-    await model.loadPending();
-    if (!mounted) return;
-    for (final item in model.pendingAnalyses.where(
-      (item) => item.status == 'saving',
-    )) {
-      try {
-        await model.resumePendingSave(item.id);
-      } catch (_) {
-        // Sin conexión: conservar el comprobante para el siguiente intento.
+    if (!mounted || _retryingPending || !_appActive) return;
+    _retryingPending = true;
+    try {
+      final model = AppScope.of(context).mainViewModel;
+      if (model.account == null ||
+          model.pendingRepository == null ||
+          model.processing ||
+          model.saving) {
+        return;
       }
-      if (!mounted) return;
+      if (model.activePendingId != null && model.preview != null) {
+        await _notifyPendingReady(model);
+        return;
+      }
+      await model.loadPending();
+      if (!mounted || model.account == null) return;
+      for (final item in model.pendingAnalyses.where(
+        (item) => item.status == 'saving',
+      )) {
+        try {
+          await model.resumePendingSave(item.id);
+        } catch (_) {
+          // Sin red: conservar el comprobante para el siguiente intento.
+        }
+        if (!mounted) return;
+      }
+      if (model.preview != null || model.image != null || model.processing) {
+        return;
+      }
+      for (final item in model.pendingAnalyses) {
+        if (item.status != 'pending') continue;
+        if (await model.previewPending(item.id)) {
+          await _notifyPendingReady(model);
+        }
+        break; // Solo una previsualización a la vez.
+      }
+    } finally {
+      _retryingPending = false;
     }
-    if (model.preview != null || model.image != null || model.processing) {
+  }
+
+  Future<void> _notifyPendingReady(MainViewModel model) async {
+    final preview = model.preview;
+    final localId = model.activePendingId;
+    if (!mounted ||
+        !_appActive ||
+        _noticeOpen ||
+        preview == null ||
+        localId == null ||
+        preview.result.id == null ||
+        _notifiedPreviewIds.contains(preview.result.id)) {
       return;
     }
-    for (final item in model.pendingAnalyses) {
-      if (item.status != 'pending') continue;
-      await model.previewPending(item.id);
-      break;
+    final ownerId = model.account?.id;
+    final previewId = preview.result.id!;
+    _notifiedPreviewIds.add(previewId);
+    _noticeOpen = true;
+    try {
+      final seeNow = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Resultado listo'),
+          content: const Text(
+            'El resultado de la imagen pendiente está listo para revisar. '
+            'No aparecerá en el historial hasta que decidas guardarlo.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Más tarde'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Ver resultado'),
+            ),
+          ],
+        ),
+      );
+      if (seeNow != true ||
+          !mounted ||
+          model.account?.id != ownerId ||
+          model.activePendingId != localId ||
+          model.preview?.result.id != previewId) {
+        return;
+      }
+      if (DateTime.now().toUtc().isAfter(model.preview!.expiresAt)) {
+        model.discardPreview();
+        if (!await model.previewPending(localId)) {
+          if (mounted) {
+            _pendingMessage(
+              'El resultado expiró. Toca el pendiente para reintentarlo.',
+            );
+          }
+          return;
+        }
+      }
+      if (mounted) _showPreview(context, model);
+    } finally {
+      _noticeOpen = false;
     }
+  }
+
+  void _pendingMessage(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _changeSort(BuildContext context, HistorySort value) async {
@@ -163,6 +260,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   void _showPreview(BuildContext context, MainViewModel model) {
+    if (model.activePendingId != null && model.preview?.result.id != null) {
+      _notifiedPreviewIds.add(model.preview!.result.id!);
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => PreviewResultPage(
@@ -201,10 +301,24 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         DateTime.now().toUtc().isAfter(model.preview!.expiresAt)) {
       model.discardPreview();
     }
+    if (model.image != null && model.activePendingId != item.id) {
+      _pendingMessage(
+        'Quita o termina la imagen seleccionada antes de abrir el pendiente.',
+      );
+      return;
+    }
     final ready =
         model.activePendingId == item.id && model.preview != null ||
         await model.previewPending(item.id);
-    if (context.mounted && ready) _showPreview(context, model);
+    if (!context.mounted) return;
+    if (ready) {
+      _showPreview(context, model);
+    } else {
+      _pendingMessage(
+        model.pendingError ??
+            'No se pudo abrir el pendiente. Inténtalo de nuevo.',
+      );
+    }
   }
 
   Future<void> _offerQueue(BuildContext context) async {

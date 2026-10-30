@@ -44,7 +44,8 @@ En Android con cuenta Supabase, cuando falla la red se puede aceptar guardar
 la imagen **cifrada en este dispositivo** como pendiente. Se conserva por cuenta
 hasta descartarla o guardar el resultado tras previsualizarlo con conexión.
 La app reintenta analizar los pendientes mientras está abierta (o al reabrirla);
-el resultado queda listo para revisar desde Historial. No se guarda en Render
+la app avisa cuando el resultado está listo para verlo o dejarlo para más tarde
+en Historial. No se guarda en Render
 sin confirmación explícita y, si sales sin guardar, el pendiente permanece.
 La matriz de pruebas para Android está en [OFFLINE_TESTING.md](OFFLINE_TESTING.md).
 

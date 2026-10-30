@@ -41,6 +41,7 @@ class AppDependencies {
     ImageRepository? images,
     AnalysisRepository? analysis,
     PendingAnalysisRepository? pendingAnalyses,
+    this.networkAvailability,
     AppearanceRepository? settings,
     HistorySortRepository? historySort,
     AppAppearance initialAppearance = AppAppearance.dark,
@@ -108,6 +109,7 @@ class AppDependencies {
   late final MainViewModel mainViewModel;
   final SessionController sessionController = SessionController();
   final bool usesRemoteAnalysis;
+  final Stream<bool>? networkAvailability;
   final void Function()? onDispose;
 
   Future<void> restoreLocalState() async {
