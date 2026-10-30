@@ -46,6 +46,7 @@ hasta descartarla o guardar el resultado tras previsualizarlo con conexión.
 La app reintenta analizar los pendientes mientras está abierta (o al reabrirla);
 el resultado queda listo para revisar desde Historial. No se guarda en Render
 sin confirmación explícita y, si sales sin guardar, el pendiente permanece.
+La matriz de pruebas para Android está en [OFFLINE_TESTING.md](OFFLINE_TESTING.md).
 
 ## Abrir como web desde Android Studio
 
