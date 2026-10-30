@@ -1,3 +1,5 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../domain/models/account.dart';
 import '../../domain/repositories/account_repository.dart';
 import '../datasources/supabase_account_data_source.dart';
@@ -15,7 +17,11 @@ class SupabaseAccountRepository extends AccountRepository {
   @override
   Stream<Account?> get sessionChanges => source.sessionChanges;
   @override
-  Future<Account?> restoreSession() => source.profile();
+  Future<Account?> restoreSession() async {
+    // No esperar una petición a profiles para restaurar la identidad local.
+    return currentAccount;
+  }
+
   @override
   Future<Account?> login(String email, String password) =>
       source.login(email, password);
@@ -25,5 +31,14 @@ class SupabaseAccountRepository extends AccountRepository {
   @override
   Future<void> resendConfirmation(String email) => source.resend(email);
   @override
-  Future<void> logout() => source.client.auth.signOut();
+  Future<void> logout() async {
+    try {
+      await source.client.auth.signOut();
+    } on AuthException {
+      // signOut limpia primero el estado local; un fallo remoto no revierte el logout.
+      if (source.client.auth.currentUser != null) {
+        rethrow;
+      }
+    }
+  }
 }

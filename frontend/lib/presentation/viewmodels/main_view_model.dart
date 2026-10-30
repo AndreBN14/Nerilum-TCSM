@@ -26,6 +26,7 @@ class MainViewModel extends ChangeNotifier {
     required this.sortHistory,
     required this.currentAccount,
     required this.logoutAccount,
+    this.onLogout,
   });
 
   final SelectImage selectImage;
@@ -38,6 +39,7 @@ class MainViewModel extends ChangeNotifier {
   final SortHistory sortHistory;
   final CurrentAccount currentAccount;
   final LogoutAccount logoutAccount;
+  final VoidCallback? onLogout;
 
   int tab = 0;
   SelectedImage? image;
@@ -292,8 +294,12 @@ class MainViewModel extends ChangeNotifier {
   }
 
   Future<void> logout() async {
-    await logoutAccount();
-    clearSessionState();
+    try {
+      await logoutAccount();
+    } finally {
+      clearSessionState();
+      onLogout?.call();
+    }
   }
 
   void clearSessionState() {

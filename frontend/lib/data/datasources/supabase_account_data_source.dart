@@ -10,32 +10,40 @@ class SupabaseAccountDataSource {
   Account? mapUser(User? user) => user == null
       ? null
       : Account(
-          name: user.userMetadata?['display_name'] as String? ?? 'Usuario',
+          id: user.id,
+          name:
+              user.userMetadata?['display_name'] as String? ??
+              (user.email?.split('@').first ?? 'Usuario'),
           email: user.email ?? '',
         );
 
   Future<Account?> profile() async {
     final user = client.auth.currentUser;
     if (user == null) return null;
-    final row = await client
-        .from('profiles')
-        .select('display_name')
-        .eq('id', user.id)
-        .maybeSingle();
-    return Account(
-      name: row?['display_name'] as String? ?? mapUser(user)!.name,
-      email: user.email ?? '',
-    );
+    try {
+      final row = await client
+          .from('profiles')
+          .select('display_name')
+          .eq('id', user.id)
+          .maybeSingle();
+      // Un cambio de cuenta durante la petición no puede devolver el perfil ajeno.
+      if (client.auth.currentUser?.id != user.id) {
+        return mapUser(client.auth.currentUser);
+      }
+      return Account(
+        id: user.id,
+        name: row?['display_name'] as String? ?? mapUser(user)!.name,
+        email: user.email ?? '',
+      );
+    } catch (_) {
+      // La sesión local permite abrir la app cuando profiles no responde.
+      return mapUser(client.auth.currentUser);
+    }
   }
 
   Future<Account?> login(String email, String password) async {
     await client.auth.signInWithPassword(email: email, password: password);
-    try {
-      return await profile();
-    } catch (_) {
-      await client.auth.signOut();
-      rethrow;
-    }
+    return profile();
   }
 
   Future<bool> register(String email, String password, String name) async {
@@ -57,6 +65,8 @@ class SupabaseAccountDataSource {
   );
 
   Stream<Account?> get sessionChanges => client.auth.onAuthStateChange.map(
-    (event) => mapUser(event.session?.user),
+    (event) => event.event == AuthChangeEvent.signedOut
+        ? null
+        : mapUser(event.session?.user ?? client.auth.currentUser),
   );
 }

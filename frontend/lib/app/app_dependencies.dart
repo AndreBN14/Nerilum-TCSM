@@ -30,6 +30,7 @@ import '../presentation/viewmodels/appearance_view_model.dart';
 import '../presentation/viewmodels/auth_view_model.dart';
 import '../presentation/viewmodels/main_view_model.dart';
 import '../presentation/viewmodels/report_view_model.dart';
+import '../presentation/viewmodels/session_controller.dart';
 
 // Punto de composición: cambiar una implementación no cambia las vistas.
 class AppDependencies {
@@ -92,12 +93,14 @@ class AppDependencies {
       sortHistory: const SortHistory(),
       currentAccount: CurrentAccount(accountRepository),
       logoutAccount: LogoutAccount(accountRepository),
+      onLogout: sessionController.signOut,
     );
   }
 
   late final AccountRepository accountRepository;
   late final AppearanceViewModel appearanceViewModel;
   late final MainViewModel mainViewModel;
+  final SessionController sessionController = SessionController();
   final bool usesRemoteAnalysis;
   final void Function()? onDispose;
 
@@ -109,6 +112,7 @@ class AppDependencies {
     } catch (_) {
       // Si no se puede recuperar la sesión mock, se ofrece la bienvenida.
     }
+    sessionController.restore(accountRepository.currentAccount?.id);
     if (accountRepository.currentAccount != null && !usesRemoteAnalysis) {
       await mainViewModel.refreshHistory();
     }
@@ -128,6 +132,7 @@ class AppDependencies {
   void dispose() {
     appearanceViewModel.dispose();
     mainViewModel.dispose();
+    sessionController.dispose();
     onDispose?.call();
   }
 }

@@ -1,14 +1,20 @@
 import '../../domain/models/account.dart';
 
+import 'package:uuid/uuid.dart';
+
 // El estado mock pertenece a esta instancia; no se comparte entre instalaciones.
 class MockAccountDataSource {
   final Map<String, String> _passwords = {'demo@nerilum.app': 'Demo1234'};
   final Map<String, String> _names = {'demo@nerilum.app': 'Cuenta demo'};
   String? _activeEmail;
 
+  String _idFor(String email) =>
+      const Uuid().v5(Namespace.url.value, 'nerilum:mock:$email');
+
   Account? get currentAccount => _activeEmail == null
       ? null
       : Account(
+          id: _idFor(_activeEmail!),
           email: _activeEmail!,
           name: _names[_activeEmail!] ?? 'Cuenta demo',
         );
