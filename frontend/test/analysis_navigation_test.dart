@@ -12,6 +12,7 @@ import 'package:frontend/main.dart';
 import 'package:frontend/presentation/views/analysis_view.dart';
 import 'package:frontend/presentation/views/image_zoom_page.dart';
 import 'package:frontend/presentation/views/preview_result_page.dart';
+import 'package:frontend/presentation/widgets/main_components.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -108,16 +109,23 @@ void main() {
       expect(find.byType(InteractiveViewer), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
-    await tester.dragUntilVisible(
-      find.text('Analizar imagen'),
-      find.byType(ListView).last,
-      const Offset(0, -300),
-    );
+      await tester.dragUntilVisible(
+        find.text('Analizar imagen'),
+        find.byType(ListView).last,
+        const Offset(0, -300),
+      );
       await tester.tap(find.text('Analizar imagen'));
       await tester.pumpAndSettle();
       expect(find.byType(PreviewResultPage), findsOneWidget);
       expect(find.byType(AnalysisView), findsNothing);
       expect(find.text('Nombre del análisis (opcional)'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(ResultCard),
+          matching: find.byType(TextFormField),
+        ),
+        findsOneWidget,
+      );
       expect(find.byType(Table), findsNothing);
       expect(analysis.saved, 0);
 
@@ -139,6 +147,10 @@ void main() {
       await tester.tap(find.text('Analizar imagen'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextFormField).last, 'Mi análisis');
+      expect(deps.mainViewModel.analysisName, 'Mi análisis');
+      expect(find.text('Mi análisis'), findsOneWidget);
+      tester.testTextInput.hide();
+      await tester.pumpAndSettle();
       await tester.dragUntilVisible(
         find.text('Guardar en historial'),
         find.byType(ListView).last,
@@ -156,21 +168,21 @@ void main() {
     'Guardar desde el aviso mantiene el resultado si falla el guardado',
     (tester) async {
       final analysis = _Analysis()..failSave = true;
-    final deps = AppDependencies(images: _Images(), analysis: analysis);
-    addTearDown(deps.dispose);
-    final auth = deps.createAuthViewModel();
-    addTearDown(auth.dispose);
-    await auth.login('demo@nerilum.app', 'Demo1234');
-    await tester.pumpWidget(NerilumApp(dependencies: deps));
-    await tester.pumpAndSettle();
-    deps.mainViewModel.selectTab(1);
-    await deps.mainViewModel.pickImage();
-    await tester.pumpAndSettle();
-    await tester.dragUntilVisible(
-      find.text('Analizar imagen'),
-      find.byType(ListView).last,
-      const Offset(0, -300),
-    );
+      final deps = AppDependencies(images: _Images(), analysis: analysis);
+      addTearDown(deps.dispose);
+      final auth = deps.createAuthViewModel();
+      addTearDown(auth.dispose);
+      await auth.login('demo@nerilum.app', 'Demo1234');
+      await tester.pumpWidget(NerilumApp(dependencies: deps));
+      await tester.pumpAndSettle();
+      deps.mainViewModel.selectTab(1);
+      await deps.mainViewModel.pickImage();
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text('Analizar imagen'),
+        find.byType(ListView).last,
+        const Offset(0, -300),
+      );
       await tester.tap(find.text('Analizar imagen'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Volver al análisis'));

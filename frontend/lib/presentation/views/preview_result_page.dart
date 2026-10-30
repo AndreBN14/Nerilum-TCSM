@@ -126,19 +126,30 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
                       ResultCard(
                         result: preview.result,
                         onTap: null,
-                        displayNameOverride:
-                            widget.model.analysisName.trim().isEmpty
-                            ? null
-                            : widget.model.analysisName.trim(),
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        initialValue: widget.model.analysisName,
-                        enabled: widget.model.canEditPreviewName,
-                        maxLength: 120,
-                        onChanged: widget.model.setAnalysisName,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del análisis (opcional)',
+                        titleContent: TextFormField(
+                          initialValue: widget.model.analysisName,
+                          enabled: widget.model.canEditPreviewName,
+                          maxLength: 120,
+                          maxLines: 1,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) =>
+                              FocusScope.of(context).unfocus(),
+                          onChanged: widget.model.setAnalysisName,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 18,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Nombre del análisis (opcional)',
+                            hintText: 'Análisis sin nombre',
+                            floatingLabelBehavior: FloatingLabelBehavior.always,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            disabledBorder: InputBorder.none,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 12),
