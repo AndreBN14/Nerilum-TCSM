@@ -8,9 +8,8 @@ class PrintingReportOutputRepository implements ReportOutputRepository {
   const PrintingReportOutputRepository();
 
   @override
-  Future<void> open(Uint8List bytes, {required String filename}) async {
-    await Printing.layoutPdf(name: filename, onLayout: (_) async => bytes);
-  }
+  Future<void> open(Uint8List bytes, {required String filename}) =>
+      Printing.sharePdf(bytes: bytes, filename: filename);
 
   @override
   Future<void> share(Uint8List bytes, {required String filename}) =>
