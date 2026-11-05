@@ -177,6 +177,15 @@ abstract final class NerilumTheme {
           textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
         ),
       ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: colors.textPrimary,
+          minimumSize: const Size.fromHeight(58),
+          shape: const StadiumBorder(),
+          side: BorderSide(color: colors.border, width: 1.5),
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        ),
+      ),
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(foregroundColor: colors.mint),
       ),

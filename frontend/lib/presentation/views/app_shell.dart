@@ -502,43 +502,7 @@ class _MainBottomBar extends StatelessWidget {
               child: Row(
                 children: [
                   _item(0, Icons.home_outlined, 'Inicio', colors),
-                  Expanded(
-                    child: Center(
-                      child: Semantics(
-                        button: true,
-                        label: 'Analizar: seleccionar una imagen',
-                        child: InkWell(
-                          onTap: () => onSelect(1),
-                          borderRadius: BorderRadius.circular(40),
-                          child: Container(
-                            width: 76,
-                            height: 76,
-                            decoration: BoxDecoration(
-                              color: colors.mint,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.camera_alt,
-                                  color: colors.mintDarkText,
-                                ),
-                                Text(
-                                  'Analizar',
-                                  style: TextStyle(
-                                    color: colors.mintDarkText,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  _item(1, Icons.camera_alt, 'Analizar', colors),
                   _item(2, Icons.person_outline, 'Perfil', colors),
                 ],
               ),
@@ -551,24 +515,51 @@ class _MainBottomBar extends StatelessWidget {
 
   Widget _item(int tab, IconData icon, String label, NerilumPalette colors) =>
       Expanded(
-        child: InkWell(
-          onTap: () => onSelect(tab),
-          borderRadius: BorderRadius.circular(40),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                color: selected == tab ? colors.mint : colors.textPrimary,
-              ),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: selected == tab ? colors.mint : colors.textPrimary,
-                ),
-              ),
-            ],
+        child: Semantics(
+          button: true,
+          label: label,
+          child: InkWell(
+            onTap: () => onSelect(tab),
+            borderRadius: BorderRadius.circular(40),
+            child: Center(
+              child: selected == tab
+                  ? Container(
+                      width: 76,
+                      height: 76,
+                      decoration: BoxDecoration(
+                        color: colors.mint,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(icon, color: colors.mintDarkText),
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: colors.mintDarkText,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(icon, color: colors.textPrimary),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            color: colors.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
           ),
         ),
       );
