@@ -8,15 +8,28 @@ class ImageZoomPage extends StatelessWidget {
   final SelectedImage image;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    backgroundColor: Colors.black,
-    appBar: AppBar(title: Text(image.name)),
-    body: Center(
-      child: InteractiveViewer(
-        minScale: 1,
-        maxScale: 6,
-        child: Image.memory(image.bytes, fit: BoxFit.contain),
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(title: Text(image.name)),
+      body: SizedBox(
+        width: size.width,
+        height: size.height,
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 8,
+          boundaryMargin: const EdgeInsets.all(double.infinity),
+          child: Center(
+            child: Image.memory(
+              image.bytes,
+              width: size.width,
+              height: size.height,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

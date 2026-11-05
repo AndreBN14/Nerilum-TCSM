@@ -3,11 +3,13 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../../domain/models/analysis_result.dart';
+import '../../domain/models/selected_image.dart';
 import '../../core/theme/nerilum_theme.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/main_components.dart';
 import '../../core/utils/score_text.dart';
 import '../widgets/class_scores.dart';
+import 'image_zoom_page.dart';
 
 class AnalysisDetailView extends StatelessWidget {
   const AnalysisDetailView({
@@ -75,12 +77,30 @@ class AnalysisDetailView extends StatelessWidget {
                                 color: colors.textSecondary,
                                 size: 36,
                               )
-                            : Image.memory(
-                                imageBytes!,
-                                fit: BoxFit.contain,
-                                errorBuilder: (_, _, _) => Icon(
-                                  Icons.insert_drive_file_outlined,
-                                  color: colors.textSecondary,
+                            : InkWell(
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => ImageZoomPage(
+                                      image: SelectedImage(
+                                        bytes: imageBytes!,
+                                        name: result.displayName ??
+                                            'Imagen del análisis',
+                                        extension: 'jpg',
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                child: Semantics(
+                                  label: 'Ampliar imagen del análisis',
+                                  button: true,
+                                  child: Image.memory(
+                                    imageBytes!,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, _, _) => Icon(
+                                      Icons.insert_drive_file_outlined,
+                                      color: colors.textSecondary,
+                                    ),
+                                  ),
                                 ),
                               ),
                       ),
