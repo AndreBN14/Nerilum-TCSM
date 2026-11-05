@@ -12,7 +12,6 @@ import 'package:frontend/main.dart';
 import 'package:frontend/presentation/views/analysis_view.dart';
 import 'package:frontend/presentation/views/image_zoom_page.dart';
 import 'package:frontend/presentation/views/preview_result_page.dart';
-import 'package:frontend/presentation/widgets/main_components.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
