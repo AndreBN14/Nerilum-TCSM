@@ -33,7 +33,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Explora imágenes\ncerebrales'), findsOneWidget);
-    await tester.tap(find.text('Comenzar'));
+    await tester.tap(find.text('Registrarse'));
     await tester.pumpAndSettle();
     expect(find.text('Crear cuenta'), findsWidgets);
 
@@ -53,8 +53,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const NerilumApp());
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Ya tengo cuenta'));
-    await tester.tap(find.text('Ya tengo cuenta'));
+    await tester.ensureVisible(find.text('Iniciar sesión'));
+    await tester.tap(find.text('Iniciar sesión'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Ingresar'));
@@ -104,7 +104,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const NerilumApp());
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Comenzar'));
+    await tester.tap(find.text('Registrarse'));
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField).at(0), 'Ana');
@@ -141,7 +141,7 @@ void main() {
         NerilumApp(saveLightMode: (light) async => savedLightMode = light),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Ya tengo cuenta'));
+      await tester.tap(find.text('Iniciar sesión'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byType(TextFormField).at(0),
@@ -185,10 +185,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        Theme.of(tester.element(find.text('Ya tengo cuenta'))).brightness,
+        Theme.of(tester.element(find.text('Iniciar sesión'))).brightness,
         Brightness.light,
       );
-      await tester.tap(find.text('Ya tengo cuenta'));
+      await tester.tap(find.text('Iniciar sesión'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byType(TextFormField).at(0),

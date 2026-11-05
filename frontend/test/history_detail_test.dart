@@ -66,7 +66,7 @@ void main() {
     addTearDown(deps.dispose);
     await tester.pumpWidget(NerilumApp(dependencies: deps));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Ya tengo cuenta'));
+    await tester.tap(find.text('Iniciar sesión'));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byType(TextFormField).at(0),

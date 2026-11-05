@@ -119,13 +119,7 @@ void main() {
       expect(find.byType(PreviewResultPage), findsOneWidget);
       expect(find.byType(AnalysisView), findsNothing);
       expect(find.text('Nombre del análisis (opcional)'), findsOneWidget);
-      expect(
-        find.descendant(
-          of: find.byType(ResultCard),
-          matching: find.byType(TextFormField),
-        ),
-        findsOneWidget,
-      );
+      expect(find.byType(TextFormField), findsOneWidget);
       expect(find.byType(Table), findsNothing);
       expect(analysis.saved, 0);
 

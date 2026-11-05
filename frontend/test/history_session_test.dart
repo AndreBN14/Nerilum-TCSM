@@ -104,7 +104,7 @@ void main() {
       await tester.pumpWidget(NerilumApp(dependencies: reopened));
       await tester.pumpAndSettle();
       expect(find.text('Análisis recientes'), findsOneWidget);
-      expect(find.text('Comenzar'), findsNothing);
+      expect(find.text('Registrarse'), findsNothing);
       expect(find.text('Exploración inicial'), findsOneWidget);
       expect(find.text('MildDemented'), findsNothing);
 
@@ -166,7 +166,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Cerrar sesión'));
       await tester.pumpAndSettle();
-      expect(find.text('Comenzar'), findsOneWidget);
+      expect(find.text('Registrarse'), findsOneWidget);
 
       final afterLogout = AppDependencies();
       addTearDown(afterLogout.dispose);

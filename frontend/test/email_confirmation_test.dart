@@ -50,7 +50,7 @@ void main() {
       addTearDown(dependencies.dispose);
       await tester.pumpWidget(NerilumApp(dependencies: dependencies));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Comenzar'));
+      await tester.tap(find.text('Registrarse'));
       await tester.pumpAndSettle();
       expect(find.byType(CheckboxListTile), findsNothing);
       await tester.enterText(find.byType(TextFormField).at(0), 'Ana');
