@@ -10,14 +10,14 @@ Sin conexión, el usuario pulsa analizar, acepta guardar la imagen en el disposi
 
 | Tema | Decisión |
 | --- | --- |
-| Significado de analizar offline | Guardado automático al reconectar, con **consentimiento explícito al encolar** y cancelación mientras el pendiente no se haya enviado. El backend no tiene DELETE, así que lo guardado no se puede deshacer. |
+| Significado de analizar offline | El consentimiento al encolar permite almacenar la imagen cifrada y enviarla a `/analyses/preview` al reconectar. **Nunca autoriza el guardado automático**: el usuario ve el resultado y decide si pulsa Guardar. Salir sin guardar conserva la imagen pendiente. |
 | Protección local | Base SQLite cifrada con SQLCipher e imágenes cifradas con AES-GCM. Una clave aleatoria de 256 bits se genera en el primer uso y se guarda con `flutter_secure_storage` (respaldado por el Keystore de Android). Si la librería de SQLCipher elegida no es compatible con la versión de Flutter del proyecto, se detiene el trabajo y se revisa la opción; no se baja a una base sin cifrar en silencio. |
 | Imágenes | En archivos dentro del directorio privado de la app, nunca como BLOB. Se guardan los bytes seleccionados sin transformar. |
 | Copias de seguridad | `android:allowBackup="false"` desde la Etapa 2.1. Protege también la sesión de Supabase. Consecuencia aceptada: al reinstalar o restaurar en otro dispositivo se pierde la sesión. |
 | Cierre de sesión | Los pendientes se conservan aislados por UUID. Si hay pendientes, la app pregunta si conservarlos o borrarlos; por defecto, conservar. |
 | Límites | 10 pendientes por propietario y 30 días de antigüedad. Con 10 MiB por imagen, unos 100 MiB como máximo. Son constantes configurables. |
 | Plataformas | Solo Android. La cola se desactiva en web, iOS y modo mock. |
-| Identificador y clave | Un UUID v4 que es a la vez identificador local y `Idempotency-Key`. Se genera al encolar y no se regenera nunca. |
+| Identificador local | UUID v4 estable para el pendiente. El guardado v2 utiliza el `preview_id` y el `save_proof` emitidos por Render; `Idempotency-Key` corresponde solamente al POST legado. |
 | Propietario | `owner_id` es el UUID de Supabase del Paso 1, `NOT NULL`. Ninguna consulta se hace sin filtrar por él. |
 | Tokens | Nunca se guardan en la base local. |
 
@@ -78,9 +78,9 @@ Sin conexión, el usuario pulsa analizar, acepta guardar la imagen en el disposi
 El flujo online `preview → save` no cambia. La cola entra solo cuando falla:
 
 1. El usuario pulsa analizar. Si el análisis falla por red o timeout, la app ofrece guardar para más tarde.
-2. El texto de consentimiento dice, en esencia: no hay conexión; la imagen se guardará en el dispositivo; cuando haya conexión se analizará y el resultado se guardará en tu cuenta automáticamente; puedes cancelarla mientras esté pendiente.
-3. Al aceptar: validar, guardar la imagen sin transformar, calcular el hash, generar la clave y crear la fila. Solo entonces se muestra el pendiente.
-4. Un fallo de `save` con un `save_proof` ya obtenido sigue reintentándose con ese comprobante y no se convierte en una solicitud nueva.
+2. El texto de consentimiento dice, en esencia: no hay conexión; la imagen se guardará cifrada en el dispositivo; cuando haya conexión podrá obtenerse una previsualización; **no se guardará en el historial sin pulsar Guardar**. Se puede cancelar el pendiente antes de guardarlo.
+3. Al aceptar: validar, guardar la imagen sin transformar, calcular el hash, generar un identificador local y crear la fila. Solo entonces se muestra el pendiente.
+4. En el Paso 3, un fallo de `save` con un `save_proof` ya obtenido se reintenta con el mismo comprobante y nombre; no se convierte en una solicitud nueva.
 
 ### 7.2 Datos locales
 
@@ -88,15 +88,15 @@ Base con `PRAGMA user_version` y `onUpgrade` desde el inicio. Tabla de pendiente
 
 | Campo | Contenido |
 | --- | --- |
-| `id` | UUID v4, identificador local y `Idempotency-Key`. Cumple el formato del backend (`[A-Za-z0-9._:-]`, 1 a 128 caracteres). |
+| `id` | UUID v4 local estable; no se envía como `Idempotency-Key` al flujo preview/save. |
 | `owner_id` | UUID de Supabase, `NOT NULL`. |
-| `display_name` | Texto exacto que se enviará. No se modifica. |
+| `display_name` | Nombre elegido después de la previsualización, fijado al confirmar Guardar; nulo antes. |
 | `original_filename`, `mime` | Metadatos de la imagen. El nombre de archivo no entra en el hash del backend. |
 | `image_path`, `image_size`, `image_sha256` | Ruta relativa, tamaño y hash de los bytes en claro. |
-| `status` | `pending`, `syncing`, `synced`, `failed`. En este paso solo se usa `pending`. |
+| `status` | `pending`, `previewing`, `preview_ready`, `saving`, `saved`, `failed`. En este paso solo se usa `pending`. |
 | `failure_reason`, `attempt_count`, `next_attempt_at`, `last_error_code` | Control de reintentos; los usa el Paso 3. |
 | `created_at`, `updated_at`, `synced_at` | Fechas locales. |
-| `remote_id`, `result_json` | Respuesta del servidor; los usa el Paso 3. |
+| `remote_id`, `result_json`, `save_proof`, `proof_expires_at` | Previsualización y comprobante; el Paso 3 los usa y protege dentro de la base cifrada. Si se cierra la vista sin guardar, se borra la previsualización y se conserva la imagen pendiente. Al confirmar Guardar, el comprobante y nombre se conservan hasta resolver un timeout de forma idempotente. |
 
 Índice por `(owner_id, status, created_at)`.
 
@@ -134,7 +134,7 @@ Las operaciones de reclamar, completar, fallar y reencolar son del Paso 3.
 
 ### 7.6 Interfaz
 
-- Los pendientes aparecen en el historial, distinguidos de los confirmados.
+- Los pendientes aparecen en el historial, distinguidos de los confirmados. Antes de confirmar Guardar no son registros remotos.
 - Sin conexión y sin caché, el historial muestra solo los pendientes y un aviso de falta de conexión.
 - Acciones: cancelar o descartar un pendiente.
 - Al cerrar sesión con pendientes, preguntar si conservarlos o borrarlos.
@@ -189,6 +189,6 @@ Cada etapa es un cambio revisable por separado y deja las pruebas anteriores en 
 ## 12. Entrega al Paso 3
 
 - Esquema completo de pendientes, sin migraciones adicionales.
-- Cada pendiente con propietario, clave de idempotencia, bytes inmutables y hash.
+- Cada pendiente con propietario, identificador local, bytes inmutables y hash. El comprobante firmado solo existe después de previsualizar en línea.
 - Imágenes cifradas y verificables.
 - Repositorio básico con pruebas de aislamiento, sobre el que el Paso 3 añade reclamar, completar y fallar.

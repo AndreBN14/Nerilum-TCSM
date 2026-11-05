@@ -26,6 +26,8 @@ class HttpAnalysisDataSource {
     String? token;
     try {
       token = await accessToken();
+    } on AnalysisNetworkFailure {
+      rethrow;
     } catch (_) {
       throw const AnalysisFailure(
         'No se pudo recuperar la sesión. Vuelve a iniciar sesión.',
@@ -44,15 +46,16 @@ class HttpAnalysisDataSource {
           .then(http.Response.fromStream)
           .timeout(timeout);
     } on TimeoutException {
-      throw const AnalysisFailure(
+      throw const AnalysisNetworkFailure(
         'El servidor tardó demasiado. Revisa el historial antes de reintentar la misma operación.',
       );
     } on http.ClientException {
-      throw const AnalysisFailure(
+      throw const AnalysisNetworkFailure(
         'No se pudo completar la conexión. Revisa el historial antes de reintentar.',
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (response.statusCode == 404) throw const AnalysisNotFound();
       if (response.statusCode == 503) {
         throw const AnalysisUnavailable(
           'El backend o el modelo no están disponibles. Inténtalo más tarde.',
@@ -134,6 +137,22 @@ class HttpAnalysisDataSource {
       throw const AnalysisFailure(
         'El backend devolvió una previsualización no válida.',
       );
+    }
+  }
+
+  Future<AnalysisResult?> findById(String id) async {
+    if (!RegExp(r'^an_[a-f0-9]+$').hasMatch(id)) {
+      throw const AnalysisFailure('Identificador de análisis inválido.');
+    }
+    try {
+      final json = await _send(
+        http.Request('GET', baseUri.resolve('analyses/$id')),
+      );
+      return AnalysisResultDto.fromJson(json);
+    } on AnalysisNotFound {
+      return null;
+    } on FormatException {
+      throw const AnalysisFailure('El backend devolvió un análisis inválido.');
     }
   }
 

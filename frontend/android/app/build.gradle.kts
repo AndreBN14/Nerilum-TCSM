@@ -71,6 +71,7 @@ android {
 
     buildTypes {
         release {
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Solo la clave de producción; sin ella la configuración queda en null
             // y el bloque inferior impide ejecutar cualquier tarea de release.
             // Bajo ninguna circunstancia se firma con la clave debug.

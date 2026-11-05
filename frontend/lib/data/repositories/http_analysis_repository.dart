@@ -5,7 +5,8 @@ import '../../domain/repositories/preview_repository.dart';
 import '../../domain/models/analysis_preview.dart';
 import '../datasources/http_analysis_data_source.dart';
 
-class HttpAnalysisRepository implements AnalysisRepository, PreviewRepository {
+class HttpAnalysisRepository
+    implements AnalysisRepository, PreviewRepository, AnalysisLookupRepository {
   const HttpAnalysisRepository(this.source);
   final HttpAnalysisDataSource source;
 
@@ -29,6 +30,9 @@ class HttpAnalysisRepository implements AnalysisRepository, PreviewRepository {
   @override
   Future<AnalysisResult> save(AnalysisPreview preview, {String? displayName}) =>
       source.savePreview(preview, displayName: displayName);
+
+  @override
+  Future<AnalysisResult?> findById(String id) => source.findById(id);
 }
 
 class UnconfiguredAnalysisRepository implements AnalysisRepository {

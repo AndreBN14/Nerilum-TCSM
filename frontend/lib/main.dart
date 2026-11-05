@@ -2,15 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app/app_dependencies.dart';
 import 'app/auth_configuration.dart';
 import 'app/api_configuration.dart';
 import 'data/datasources/http_analysis_data_source.dart';
+import 'data/datasources/connectivity_data_source.dart';
 import 'data/repositories/http_analysis_repository.dart';
 import 'data/datasources/supabase_account_data_source.dart';
 import 'data/repositories/supabase_account_repository.dart';
+import 'data/repositories/encrypted_pending_analysis_repository.dart';
+import 'domain/repositories/analysis_repository.dart';
 import 'app/app_scope.dart';
 import 'domain/models/appearance.dart';
 import 'domain/models/account.dart';
@@ -35,13 +39,25 @@ Future<void> main() async {
           ? HttpAnalysisDataSource(
               baseUri: apiConfig.baseUri,
               accessToken: () async {
-                var session = client.auth.currentSession;
-                if (session != null && session.isExpired) {
-                  session = (await client.auth.refreshSession()).session;
+                try {
+                  var session = client.auth.currentSession;
+                  if (session != null && session.isExpired) {
+                    session = (await client.auth.refreshSession()).session;
+                  }
+                  return session?.accessToken;
+                } on AuthRetryableFetchException {
+                  throw const AnalysisNetworkFailure(
+                    'Sin conexión para verificar la sesión.',
+                  );
                 }
-                return session?.accessToken;
               },
             )
+          : null;
+      final pendingSource =
+          analysisSource != null &&
+              !kIsWeb &&
+              defaultTargetPlatform == TargetPlatform.android
+          ? EncryptedPendingAnalysisRepository()
           : null;
       dependencies = AppDependencies(
         accounts: SupabaseAccountRepository(
@@ -51,7 +67,14 @@ Future<void> main() async {
             ? const UnconfiguredAnalysisRepository()
             : HttpAnalysisRepository(analysisSource),
         usesRemoteAnalysis: analysisSource != null,
-        onDispose: analysisSource?.close,
+        pendingAnalyses: pendingSource,
+        networkAvailability: pendingSource == null
+            ? null
+            : const ConnectivityDataSource().available,
+        onDispose: () {
+          analysisSource?.close();
+          if (pendingSource != null) unawaited(pendingSource.close());
+        },
       );
     } else {
       dependencies = AppDependencies();
@@ -100,31 +123,72 @@ class NerilumApp extends StatefulWidget {
 class _NerilumAppState extends State<NerilumApp> {
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription<Account?>? _sessionSubscription;
+  StreamSubscription<AuthState>? _authSubscription;
 
   @override
   void initState() {
     super.initState();
-    var activeEmail = _dependencies.accountRepository.currentAccount?.email;
-    _sessionSubscription = _dependencies.accountRepository.sessionChanges
-        .listen((account) {
+    var activeId = _dependencies.accountRepository.currentAccount?.id;
+    if (_dependencies.sessionController.ownerId != activeId) {
+      _dependencies.sessionController.restore(activeId);
+    }
+    if (_dependencies.accountRepository is SupabaseAccountRepository) {
+      final auth =
+          (_dependencies.accountRepository as SupabaseAccountRepository)
+              .source
+              .client
+              .auth;
+      _authSubscription = auth.onAuthStateChange.listen(
+        (state) {
           if (!mounted) return;
-          if (account?.email == activeEmail) return;
-          activeEmail = account?.email;
-          if (account != null) {
-            _dependencies.mainViewModel.clearSessionState();
-            _dependencies.mainViewModel.refreshHistory();
-            _navigatorKey.currentState?.pushNamedAndRemoveUntil(
-              '/app',
-              (_) => false,
+          if ((state.event == AuthChangeEvent.signedIn ||
+                  state.event == AuthChangeEvent.tokenRefreshed) &&
+              state.session != null) {
+            _dependencies.sessionController.markVerified(
+              state.session!.user.id,
             );
-          } else {
-            _dependencies.mainViewModel.clearSessionState();
-            _navigatorKey.currentState?.pushNamedAndRemoveUntil(
-              '/welcome',
-              (_) => false,
-            );
+          } else if (state.event == AuthChangeEvent.signedOut) {
+            _dependencies.sessionController.signOut();
           }
-        });
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (mounted) _dependencies.sessionController.markUnverified();
+        },
+      );
+    }
+    _sessionSubscription = _dependencies.accountRepository.sessionChanges
+        .listen(
+          (account) {
+            if (!mounted) return;
+            if (account?.id == activeId) return;
+            activeId = account?.id;
+            if (account == null) {
+              _dependencies.sessionController.signOut();
+            } else if (_dependencies.sessionController.ownerId != account.id) {
+              _dependencies.sessionController.restore(account.id);
+            }
+            if (account != null) {
+              _dependencies.mainViewModel.clearSessionState();
+              _dependencies.mainViewModel.refreshHistory();
+              _dependencies.mainViewModel.loadPending();
+              _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                '/app',
+                (_) => false,
+              );
+            } else {
+              _dependencies.mainViewModel.clearSessionState();
+              _navigatorKey.currentState?.pushNamedAndRemoveUntil(
+                '/welcome',
+                (_) => false,
+              );
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            // Errores de red durante refresh no son un evento signedOut.
+            // Conservar la sesión y los datos del propietario hasta recibir
+            // un signedOut explícito del SDK.
+          },
+        );
   }
 
   late final AppDependencies _dependencies =
@@ -139,6 +203,7 @@ class _NerilumAppState extends State<NerilumApp> {
   @override
   void dispose() {
     _sessionSubscription?.cancel();
+    _authSubscription?.cancel();
     if (widget.dependencies == null || widget.disposeDependencies) {
       _dependencies.dispose();
     }

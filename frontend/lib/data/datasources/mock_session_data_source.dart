@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../domain/models/account.dart';
 
@@ -33,7 +34,17 @@ class LocalMockSessionDataSource implements MockSessionDataSource {
           name.isEmpty) {
         return null;
       }
-      return Account(email: email, name: name);
+      final id = data['id'];
+      return Account(
+        id: id is String && id.isNotEmpty
+            ? id
+            : const Uuid().v5(
+                Namespace.url.value,
+                'nerilum:mock:${email.toLowerCase()}',
+              ),
+        email: email,
+        name: name,
+      );
     } on FormatException {
       return null;
     }
@@ -42,7 +53,11 @@ class LocalMockSessionDataSource implements MockSessionDataSource {
   @override
   Future<void> save(Account account) => preferences.setString(
     key,
-    jsonEncode({'email': account.email, 'name': account.name}),
+    jsonEncode({
+      'id': account.id,
+      'email': account.email,
+      'name': account.name,
+    }),
   );
 
   @override

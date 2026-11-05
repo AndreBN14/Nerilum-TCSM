@@ -110,12 +110,14 @@ class ResultCard extends StatelessWidget {
     super.key,
     required this.result,
     required this.onTap,
-    this.displayNameOverride,
+    this.titleContent,
   });
 
   final AnalysisResult result;
   final VoidCallback? onTap;
-  final String? displayNameOverride;
+
+  /// Only the unsaved preview supplies an editable title. Saved cards stay read-only.
+  final Widget? titleContent;
 
   @override
   Widget build(BuildContext context) {
@@ -144,17 +146,16 @@ class ResultCard extends StatelessWidget {
                 style: TextStyle(color: colors.textSecondary, fontSize: 13),
               ),
               const SizedBox(height: 12),
-              Text(
-                displayNameOverride ??
-                    result.displayName ??
-                    'Análisis sin nombre',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 18,
-                ),
-              ),
+              titleContent ??
+                  Text(
+                    result.displayName ?? 'Análisis sin nombre',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 18,
+                    ),
+                  ),
               const SizedBox(height: 8),
               Text(
                 'Clase estimada: ${result.category}',

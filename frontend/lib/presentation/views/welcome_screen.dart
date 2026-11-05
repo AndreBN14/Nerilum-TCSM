@@ -84,24 +84,32 @@ class WelcomeScreen extends StatelessWidget {
                             children: [
                               ElevatedButton(
                                 onPressed: () =>
-                                    Navigator.pushNamed(context, '/register'),
+                                    Navigator.pushNamed(context, '/login'),
                                 child: const Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Expanded(
-                                      child: Center(child: Text('Comenzar')),
+                                      child: Center(
+                                        child: Text('Iniciar sesión'),
+                                      ),
                                     ),
                                     Icon(Icons.arrow_forward),
                                   ],
                                 ),
                               ),
                               const SizedBox(height: 12),
-                              TextButton(
+                              OutlinedButton(
                                 onPressed: () =>
-                                    Navigator.pushNamed(context, '/login'),
-                                child: const Text(
-                                  'Ya tengo cuenta',
-                                  style: TextStyle(fontSize: 16),
+                                    Navigator.pushNamed(context, '/register'),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: Center(
+                                        child: Text('Registrarse'),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],

@@ -14,6 +14,7 @@ import '../data/repositories/mock_analysis_repository.dart';
 import '../domain/models/appearance.dart';
 import '../domain/repositories/account_repository.dart';
 import '../domain/repositories/analysis_repository.dart';
+import '../domain/repositories/pending_analysis_repository.dart';
 import '../domain/repositories/preview_repository.dart';
 import '../domain/usecases/preview_use_cases.dart';
 import '../domain/usecases/generate_report.dart';
@@ -30,6 +31,7 @@ import '../presentation/viewmodels/appearance_view_model.dart';
 import '../presentation/viewmodels/auth_view_model.dart';
 import '../presentation/viewmodels/main_view_model.dart';
 import '../presentation/viewmodels/report_view_model.dart';
+import '../presentation/viewmodels/session_controller.dart';
 
 // Punto de composición: cambiar una implementación no cambia las vistas.
 class AppDependencies {
@@ -38,6 +40,8 @@ class AppDependencies {
     MockSessionDataSource? sessionStore,
     ImageRepository? images,
     AnalysisRepository? analysis,
+    PendingAnalysisRepository? pendingAnalyses,
+    this.networkAvailability,
     AppearanceRepository? settings,
     HistorySortRepository? historySort,
     AppAppearance initialAppearance = AppAppearance.dark,
@@ -92,13 +96,20 @@ class AppDependencies {
       sortHistory: const SortHistory(),
       currentAccount: CurrentAccount(accountRepository),
       logoutAccount: LogoutAccount(accountRepository),
+      onLogout: sessionController.signOut,
+      pendingRepository: pendingAnalyses,
+      lookupAnalysis: analysisRepository is AnalysisLookupRepository
+          ? analysisRepository as AnalysisLookupRepository
+          : null,
     );
   }
 
   late final AccountRepository accountRepository;
   late final AppearanceViewModel appearanceViewModel;
   late final MainViewModel mainViewModel;
+  final SessionController sessionController = SessionController();
   final bool usesRemoteAnalysis;
+  final Stream<bool>? networkAvailability;
   final void Function()? onDispose;
 
   Future<void> restoreLocalState() async {
@@ -108,6 +119,10 @@ class AppDependencies {
       await accountRepository.restoreSession();
     } catch (_) {
       // Si no se puede recuperar la sesión mock, se ofrece la bienvenida.
+    }
+    sessionController.restore(accountRepository.currentAccount?.id);
+    if (accountRepository.currentAccount != null) {
+      await mainViewModel.loadPending();
     }
     if (accountRepository.currentAccount != null && !usesRemoteAnalysis) {
       await mainViewModel.refreshHistory();
@@ -128,6 +143,7 @@ class AppDependencies {
   void dispose() {
     appearanceViewModel.dispose();
     mainViewModel.dispose();
+    sessionController.dispose();
     onDispose?.call();
   }
 }

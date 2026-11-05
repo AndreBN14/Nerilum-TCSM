@@ -1,6 +1,7 @@
 class Account {
-  const Account({required this.name, required this.email});
+  const Account({required this.id, required this.name, required this.email});
 
+  final String id;
   final String name;
   final String email;
 }
