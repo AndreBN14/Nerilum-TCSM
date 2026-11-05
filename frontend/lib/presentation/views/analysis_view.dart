@@ -81,7 +81,14 @@ class AnalysisView extends StatelessWidget {
                     height: 220,
                     width: double.infinity,
                     child: image == null
-                        ? const ImagePlaceholder()
+                        ? Semantics(
+                            button: true,
+                            label: 'Seleccionar imagen',
+                            child: InkWell(
+                              onTap: processing ? null : onPick,
+                              child: const ImagePlaceholder(),
+                            ),
+                          )
                         : InkWell(
                             key: const ValueKey('selected-image-zoom'),
                             onTap: () => Navigator.of(context).push(
