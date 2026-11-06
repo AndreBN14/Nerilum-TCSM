@@ -9,11 +9,15 @@ import 'package:frontend/domain/usecases/present_report.dart';
 import 'package:frontend/presentation/viewmodels/report_view_model.dart';
 
 class _Pdf implements ReportRepository {
+  Uint8List? lastImage;
   @override
   Future<Uint8List> buildPdf(
     AnalysisResult analysis, {
     Uint8List? imageBytes,
-  }) async => Uint8List.fromList([1, 2, 3]);
+  }) async {
+    lastImage = imageBytes;
+    return Uint8List.fromList([1, 2, 3]);
+  }
 }
 
 class _Output implements ReportOutputRepository {
@@ -65,4 +69,53 @@ void main() {
       expect(model.busy, isFalse);
     },
   );
+
+  test(
+    'Reabre un análisis y recupera su original antes de generar el PDF',
+    () async {
+      final pdf = _Pdf();
+      final output = _Output();
+      var calls = 0;
+      final model = ReportViewModel(
+        GenerateReport(pdf),
+        PresentReport(output),
+        loadImage: (id) async {
+          expect(id, 'an_abc123');
+          calls++;
+          return Uint8List.fromList([7, 8, 9]);
+        },
+      );
+      addTearDown(model.dispose);
+      final record = AnalysisResult(
+        id: 'an_abc123',
+        category: 'NonDemented',
+        createdAt: DateTime.utc(2026),
+        hasImage: true,
+      );
+      expect(await model.loadRecordImage(record), isTrue);
+      expect(model.imageBytes, [7, 8, 9]);
+      expect(await model.export(record), isTrue);
+      expect(pdf.lastImage, [7, 8, 9]);
+      expect(calls, 1);
+    },
+  );
+
+  test('No genera un PDF incompleto cuando falta la imagen asociada', () async {
+    final pdf = _Pdf();
+    final model = ReportViewModel(
+      GenerateReport(pdf),
+      PresentReport(_Output()),
+      loadImage: (_) async => throw StateError('sin red'),
+    );
+    addTearDown(model.dispose);
+    final record = AnalysisResult(
+      id: 'an_abc123',
+      category: 'NonDemented',
+      createdAt: DateTime.utc(2026),
+      hasImage: true,
+    );
+    expect(await model.export(record), isFalse);
+    expect(model.error, contains('imagen'));
+    expect(pdf.lastImage, isNull);
+  });
 }

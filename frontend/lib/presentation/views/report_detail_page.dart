@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
@@ -27,7 +28,12 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _report ??= AppScope.of(context).createReportViewModel();
+    if (_report == null) {
+      _report = AppScope.of(context).createReportViewModel();
+      unawaited(
+        _report!.loadRecordImage(widget.result, cached: widget.imageBytes),
+      );
+    }
   }
 
   @override
@@ -39,7 +45,7 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
   Future<void> _export({bool share = false}) async {
     final success = await _report!.export(
       widget.result,
-      imageBytes: widget.imageBytes,
+      imageBytes: _report!.imageBytes,
       share: share,
     );
     if (!mounted) return;
@@ -54,7 +60,9 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     animation: _report!,
     builder: (context, _) => AnalysisDetailView(
       result: widget.result,
-      imageBytes: widget.imageBytes,
+      imageBytes: _report!.imageBytes,
+      imageLoading: _report!.imageLoading,
+      imageError: _report!.imageError,
       onBack: () => Navigator.of(context).pop(),
       onExport: () => _export(),
       onShare: () => _export(share: true),
