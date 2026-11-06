@@ -296,7 +296,7 @@ class _ZoomableThumbnail extends StatelessWidget {
               imageBytes,
               fit: BoxFit.cover,
               cacheWidth: 256,
-              errorBuilder: (_, _, _) => _BrokenImageSlot(colors: colors),
+              errorBuilder: (context, error, stackTrace) => _BrokenImageSlot(colors: colors),
             ),
             // Badge de zoom
             Positioned(
@@ -360,7 +360,7 @@ class _ShimmerPlaceholderState extends State<_ShimmerPlaceholder>
       label: 'Cargando imagen…',
       child: AnimatedBuilder(
         animation: _anim,
-        builder: (_, __) => Container(
+        builder: (context, _) => Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,

@@ -22,6 +22,7 @@ class MainViewModel extends ChangeNotifier {
     required this.analyzeImage,
     this.previewImage,
     this.saveAnalysis,
+    this.saveAnalysisWithoutImage,
     required this.loadHistory,
     required this.loadHistorySort,
     required this.saveHistorySort,
@@ -46,6 +47,8 @@ class MainViewModel extends ChangeNotifier {
   final AnalyzeImage analyzeImage;
   final PreviewImage? previewImage;
   final SaveAnalysis? saveAnalysis;
+  /// Use case para guardar sin imagen cuando el almacenamiento no está disponible.
+  final SaveAnalysisWithoutImage? saveAnalysisWithoutImage;
   final LoadHistory loadHistory;
   final LoadHistorySort loadHistorySort;
   final SaveHistorySort saveHistorySort;
@@ -496,6 +499,50 @@ class MainViewModel extends ChangeNotifier {
     }
   }
 
+  /// Guarda el resultado de la previsualización activa SIN imagen.  /// Se usa cuando el almacenamiento de imágenes no está disponible y el
+  /// usuario ha confirmado explícitamente que quiere guardar solo los metadatos.
+  Future<void> savePreviewWithoutImage() async {
+    if (preview == null ||
+        saveAnalysisWithoutImage == null ||
+        saving ||
+        processing) {
+      return;
+    }
+    final session = _sessionVersion;
+    saving = true;
+    error = null;
+    notifyListeners();
+    try {
+      final name = analysisName.trim().isEmpty
+          ? 'Análisis sin nombre'
+          : analysisName.trim();
+      final saved = await saveAnalysisWithoutImage!(
+        preview!,
+        displayName: name,
+      );
+      if (_disposed || session != _sessionVersion) return;
+      result = saved;
+      preview = null;
+      activePendingId = null;
+      _saveCommitted = false;
+      await refreshHistory();
+    } on AnalysisUnavailable catch (failure) {
+      if (_disposed || session != _sessionVersion) return;
+      error = failure.message;
+    } on AnalysisFailure catch (failure) {
+      if (_disposed || session != _sessionVersion) return;
+      error = failure.message;
+    } catch (_) {
+      if (_disposed || session != _sessionVersion) return;
+      error = 'No se pudo guardar. Comprueba el historial antes de reintentar.';
+    } finally {
+      if (!_disposed && session == _sessionVersion) {
+        saving = false;
+        notifyListeners();
+      }
+    }
+  }
+
   /// Comprueba si el preview activo sigue siendo válido y, si expiró,
   /// descarta el preview y reintenta obtenerlo desde el pendiente local.
   /// Retorna true si el preview es válido (o fue renovado) y false si falló.
@@ -507,7 +554,15 @@ class MainViewModel extends ChangeNotifier {
     return previewPending(localId);
   }
 
-  void discardPreview() {    if (saving || processing) return;
+  /// Limpia el error visible sin descartar el preview.
+  /// Útil antes de reintentar con una estrategia diferente (p.ej. sin imagen).
+  void clearError() {
+    error = null;
+    notifyListeners();
+  }
+
+  void discardPreview() {
+    if (saving || processing) return;
     preview = null;
     if (activePendingId != null) image = null;
     activePendingId = null;

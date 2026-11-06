@@ -62,6 +62,23 @@ class _PreviewRepo implements AnalysisRepository, PreviewRepository {
   }
 
   @override
+  Future<AnalysisResult> saveWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) async {
+    saveCalls++;
+    if (failSave) throw const AnalysisFailure('Error temporal.');
+    return AnalysisResult(
+      id: preview.result.id,
+      category: preview.result.category,
+      createdAt: preview.result.createdAt,
+      probability: preview.result.probability,
+      scores: preview.result.scores,
+      displayName: displayName,
+    );
+  }
+
+  @override
   Future<AnalysisResult> analyze(
     SelectedImage image, {
     String? displayName,

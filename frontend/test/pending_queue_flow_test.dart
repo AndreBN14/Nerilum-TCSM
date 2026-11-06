@@ -33,6 +33,11 @@ class _OfflineAnalysis implements AnalysisRepository, PreviewRepository {
     String? displayName,
   }) async => throw StateError('No guardar sin confirmación');
   @override
+  Future<AnalysisResult> saveWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) async => throw StateError('No guardar sin confirmación');
+  @override
   Future<AnalysisResult> analyze(
     SelectedImage image, {
     String? displayName,

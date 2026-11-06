@@ -77,6 +77,23 @@ class _Remote
   }
 
   @override
+  Future<AnalysisResult> saveWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) async {
+    saveCalls++;
+    stored ??= AnalysisResult(
+      id: preview.result.id,
+      category: 'NonDemented',
+      createdAt: DateTime.now().toUtc(),
+      displayName: displayName,
+      probability: .8,
+      scores: const {'NonDemented': .8},
+    );
+    return stored!;
+  }
+
+  @override
   Future<AnalysisResult?> findById(String id) async =>
       stored?.id == id ? stored : null;
   @override

@@ -36,6 +36,59 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
     if (widget.model.saving) return;
     await widget.model.savePreview();
     if (!mounted) return;
+
+    // Si falló por storage no disponible, ofrecemos guardar sin imagen.
+    if (widget.model.preview != null &&
+        widget.model.error != null &&
+        widget.model.saveAnalysisWithoutImage != null) {
+      final isStorageError = widget.model.error!.toLowerCase().contains(
+            'almacenamiento',
+          );
+      if (isStorageError) {
+        await _offerSaveWithoutImage();
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    final saved = widget.model.result;
+    if (widget.model.preview == null && saved != null) {
+      widget.onSaved(saved);
+    }
+  }
+
+  /// Muestra el diálogo cuando el storage no está disponible.
+  /// El usuario elige guardar sin imagen o quedarse en la pantalla.
+  Future<void> _offerSaveWithoutImage() async {
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Almacenamiento de imágenes no disponible'),
+        content: const Text(
+          'No es posible guardar la imagen en este momento. '
+          'Puedes guardar el resultado sin imagen o quedarte aquí para intentarlo más tarde.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Guardar sin imagen'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (confirmed != true) return;
+
+    // Limpiar el error antes de reintentar sin imagen.
+    widget.model.clearError();
+    await widget.model.savePreviewWithoutImage();
+    if (!mounted) return;
     final saved = widget.model.result;
     if (widget.model.preview == null && saved != null) {
       widget.onSaved(saved);

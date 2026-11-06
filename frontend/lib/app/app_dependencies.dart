@@ -95,6 +95,9 @@ class AppDependencies {
       saveAnalysis: previewRepository == null
           ? null
           : SaveAnalysis(previewRepository),
+      saveAnalysisWithoutImage: previewRepository == null
+          ? null
+          : SaveAnalysisWithoutImage(previewRepository),
       loadHistory: LoadHistory(analysisRepository),
       loadHistorySort: LoadHistorySort(sortRepository),
       saveHistorySort: SaveHistorySort(sortRepository),

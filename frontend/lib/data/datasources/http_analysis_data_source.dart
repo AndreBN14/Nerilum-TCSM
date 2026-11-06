@@ -188,6 +188,30 @@ class HttpAnalysisDataSource {
     }
   }
 
+  /// Guarda el resultado de una previsualización SIN imagen.
+  /// Llama a POST /analyses/save (JSON), que funciona aunque el
+  /// almacenamiento de imágenes (Supabase Storage) no esté configurado.
+  Future<AnalysisResult> savePreviewWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) async {
+    final body = <String, dynamic>{'save_proof': preview.saveProof};
+    if (displayName != null && displayName.trim().isNotEmpty) {
+      body['display_name'] = displayName.trim();
+    }
+    final request = http.Request('POST', baseUri.resolve('analyses/save'));
+    request.headers['Content-Type'] = 'application/json';
+    request.body = jsonEncode(body);
+    final json = await _send(request);
+    try {
+      return AnalysisResultDto.fromJson(json);
+    } on FormatException {
+      throw const AnalysisFailure(
+        'El backend devolvió un guardado no válido. Revisa el historial.',
+      );
+    }
+  }
+
   Future<Uint8List> loadImage(String id) async {
     if (!RegExp(r'^an_[a-f0-9]+$').hasMatch(id)) {
       throw const AnalysisFailure('Identificador de análisis inválido.');

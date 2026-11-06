@@ -42,6 +42,12 @@ class HttpAnalysisRepository
   }) => source.savePreview(preview, image, displayName: displayName);
 
   @override
+  Future<AnalysisResult> saveWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) => source.savePreviewWithoutImage(preview, displayName: displayName);
+
+  @override
   Future<Uint8List> loadImage(String id) => source.loadImage(id);
 
   @override
