@@ -79,7 +79,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     try {
       final model = AppScope.of(context).mainViewModel;
       if (model.account == null ||
-          model.pendingRepository == null ||
+          model.listPending == null ||
           model.processing ||
           model.saving) {
         return;
@@ -159,16 +159,15 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           model.preview?.result.id != previewId) {
         return;
       }
-      if (DateTime.now().toUtc().isAfter(model.preview!.expiresAt)) {
-        model.discardPreview();
-        if (!await model.previewPending(localId)) {
-          if (mounted) {
-            _pendingMessage(
+      // Delegar al ViewModel la comprobación de expiración y el reintento.
+      final stillValid = await model.ensurePreviewValid(localId);
+      if (!mounted) return;
+      if (!stillValid) {
+        _pendingMessage(
+          model.pendingError ??
               'El resultado expiró. Toca el pendiente para reintentarlo.',
-            );
-          }
-          return;
-        }
+        );
+        return;
       }
       if (mounted) _showPreview(context, model);
     } finally {
@@ -205,7 +204,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             records: model.analyses,
             pending: model.pendingAnalyses,
             pendingError: model.pendingError,
-            onDiscardPending: model.discardPending,
+            onDiscardPending: model.discardPendingById,
             onOpenPending: (item) => _openPending(routeContext, item),
             readyPendingId: model.preview == null
                 ? null
@@ -297,9 +296,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       return;
     }
     if (model.activePendingId == item.id &&
-        model.preview != null &&
-        DateTime.now().toUtc().isAfter(model.preview!.expiresAt)) {
-      model.discardPreview();
+        model.preview != null) {
+      // Delegar al ViewModel la verificación de si el preview expiró.
+      final valid = await model.ensurePreviewValid(item.id);
+      if (!context.mounted) return;
+      if (valid) {
+        _showPreview(context, model);
+        return;
+      }
     }
     if (model.image != null && model.activePendingId != item.id) {
       _pendingMessage(
@@ -307,9 +311,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       );
       return;
     }
-    final ready =
-        model.activePendingId == item.id && model.preview != null ||
-        await model.previewPending(item.id);
+    final ready = await model.previewPending(item.id);
     if (!context.mounted) return;
     if (ready) {
       _showPreview(context, model);
@@ -403,7 +405,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       if (!context.mounted || decision == null) return;
       if (decision == 'delete') {
         for (final item in List.of(model.pendingAnalyses)) {
-          await model.discardPending(item.id);
+          await model.discardPendingById(item.id);
         }
         if (!context.mounted) return;
         if (model.pendingAnalyses.isNotEmpty) {

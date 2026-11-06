@@ -7,14 +7,21 @@ class AuthViewModel extends ChangeNotifier {
     required this.loginAccount,
     required this.registerAccount,
     required this.resendConfirmation,
+    required this.authCapabilities,
   });
 
   final LoginAccount loginAccount;
   final RegisterAccount registerAccount;
   final ResendConfirmation resendConfirmation;
-  bool get isDemo => registerAccount.repository.isDemo;
+  final GetAuthCapabilities authCapabilities;
+
+  bool get isDemo => authCapabilities.isDemo;
   bool get requiresEmailConfirmation =>
-      registerAccount.repository.requiresEmailConfirmation;
+      authCapabilities.requiresEmailConfirmation;
+
+  bool busy = false;
+  String? error;
+  bool _disposed = false;
 
   Future<bool> resend(String email) async {
     if (busy) return false;
@@ -25,17 +32,14 @@ class AuthViewModel extends ChangeNotifier {
       await resendConfirmation(email);
       return true;
     } catch (_) {
-      error = 'No se pudo reenviar el correo. Espera unos minutos e inténtalo de nuevo.';
+      error =
+          'No se pudo reenviar el correo. Espera unos minutos e inténtalo de nuevo.';
       return false;
     } finally {
       busy = false;
       if (!_disposed) notifyListeners();
     }
   }
-
-  bool busy = false;
-  String? error;
-  bool _disposed = false;
 
   Future<bool> login(String email, String password) async {
     if (busy) return false;
@@ -49,7 +53,8 @@ class AuthViewModel extends ChangeNotifier {
       }
       return account != null;
     } catch (_) {
-      error = 'No se pudo iniciar sesión. Comprueba tu conexión, tus datos y la confirmación del correo.';
+      error =
+          'No se pudo iniciar sesión. Comprueba tu conexión, tus datos y la confirmación del correo.';
       return false;
     } finally {
       busy = false;

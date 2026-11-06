@@ -17,17 +17,18 @@ import '../domain/repositories/analysis_repository.dart';
 import '../domain/repositories/analysis_image_repository.dart';
 import '../domain/repositories/pending_analysis_repository.dart';
 import '../domain/repositories/preview_repository.dart';
-import '../domain/usecases/preview_use_cases.dart';
-import '../domain/usecases/generate_report.dart';
-import '../domain/usecases/present_report.dart';
-import '../domain/repositories/appearance_repository.dart';
-import '../domain/repositories/image_repository.dart';
-import '../domain/repositories/history_sort_repository.dart';
 import '../domain/usecases/account_use_cases.dart';
 import '../domain/usecases/analysis_use_cases.dart';
 import '../domain/usecases/appearance_use_cases.dart';
-import '../domain/usecases/image_use_cases.dart';
+import '../domain/usecases/generate_report.dart';
 import '../domain/usecases/history_sort_use_cases.dart';
+import '../domain/usecases/image_use_cases.dart';
+import '../domain/usecases/pending_use_cases.dart';
+import '../domain/usecases/present_report.dart';
+import '../domain/usecases/preview_use_cases.dart';
+import '../domain/repositories/appearance_repository.dart';
+import '../domain/repositories/image_repository.dart';
+import '../domain/repositories/history_sort_repository.dart';
 import '../presentation/viewmodels/appearance_view_model.dart';
 import '../presentation/viewmodels/auth_view_model.dart';
 import '../presentation/viewmodels/main_view_model.dart';
@@ -101,10 +102,36 @@ class AppDependencies {
       currentAccount: CurrentAccount(accountRepository),
       logoutAccount: LogoutAccount(accountRepository),
       onLogout: sessionController.signOut,
-      pendingRepository: pendingAnalyses,
       lookupAnalysis: analysisRepository is AnalysisLookupRepository
           ? analysisRepository as AnalysisLookupRepository
           : null,
+      // UseCases de análisis pendientes: solo se inyectan cuando existe un
+      // repositorio concreto; en caso contrario los parámetros son null y
+      // MainViewModel desactiva la funcionalidad de cola.
+      listPending: pendingAnalyses == null
+          ? null
+          : ListPending(pendingAnalyses),
+      enqueuePending: pendingAnalyses == null
+          ? null
+          : EnqueuePending(pendingAnalyses),
+      findPending: pendingAnalyses == null
+          ? null
+          : FindPending(pendingAnalyses),
+      getPendingImage: pendingAnalyses == null
+          ? null
+          : GetPendingImage(pendingAnalyses),
+      discardPending: pendingAnalyses == null
+          ? null
+          : DiscardPending(pendingAnalyses),
+      beginPendingSave: pendingAnalyses == null
+          ? null
+          : BeginPendingSave(pendingAnalyses),
+      completePendingSave: pendingAnalyses == null
+          ? null
+          : CompletePendingSave(pendingAnalyses),
+      releaseExpiredPendingSave: pendingAnalyses == null
+          ? null
+          : ReleaseExpiredPendingSave(pendingAnalyses),
     );
   }
 
@@ -138,6 +165,7 @@ class AppDependencies {
     loginAccount: LoginAccount(accountRepository),
     registerAccount: RegisterAccount(accountRepository),
     resendConfirmation: ResendConfirmation(accountRepository),
+    authCapabilities: GetAuthCapabilities(accountRepository),
   );
 
   ReportViewModel createReportViewModel() => ReportViewModel(
