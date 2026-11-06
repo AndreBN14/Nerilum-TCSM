@@ -6,15 +6,15 @@ Solo está activa en Android, con `AUTH_MODE=supabase` y `API_BASE_URL` definida
 
 ## Verificaciones automatizadas
 
-- `flutter test --no-pub --concurrency=1`: 59 pruebas pasaron (incluyen sesión,
-  cifrado AES-GCM de archivos, aislamiento por propietario, pérdida de respuesta
-  al guardar, expiración y pruebas HTTP). SQLite se ejercita con FFI en el equipo;
+- `flutter test --no-pub --concurrency=1`: la suite cubre sesión, cifrado AES-GCM,
+  aislamiento por propietario, pérdida de respuesta, reenvío del original tras
+  reiniciar, expiración, descarga de imagen, PDF y HTTP. SQLite se ejercita con
+  FFI en el equipo;
   **la apertura nativa SQLCipher se debe confirmar en Android**.
 - `flutter analyze --no-pub`: sin observaciones.
-- `flutter build apk --debug --no-pub` con `AUTH_MODE=supabase`, URL pública de
-  Supabase y URL de Render: compilación Android completada. El APK de prueba está
-  en `build/app/outputs/flutter-apk/app-debug.apk`. El APK release requiere el
-  keystore original, según `RELEASE.md`.
+- El APK anterior no incluye el guardado de originales. Este cambio se ha
+  validado sin generar APK; el release requiere el keystore original, según
+  `RELEASE.md`.
 
 ## Prueba manual pendiente en un teléfono Android
 
@@ -31,7 +31,9 @@ Solo está activa en Android, con `AUTH_MODE=supabase` y `API_BASE_URL` definida
    Salir de la vista sin guardar conserva la imagen pendiente y no crea un
    registro remoto.
 4. Volver a abrirlo, asignar nombre y confirmar Guardar. Comprobar un único
-   registro en el historial remoto y que desaparece el pendiente local.
+   registro en el historial remoto, `has_image=true`, la presencia del original
+   en el bucket privado y que desaparece el pendiente local. Reabrir el detalle
+   y exportar PDF después de reiniciar: la imagen debe seguir disponible.
 5. Repetir con una cuenta distinta en el mismo dispositivo: ningún pendiente de
    la cuenta anterior debe verse ni enviarse. Probar cierre de sesión conservando
    y borrando pendientes.

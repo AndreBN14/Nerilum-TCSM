@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:image/image.dart' as img;
 
 import '../../domain/models/analysis_result.dart';
 import '../../domain/repositories/report_repository.dart';
@@ -21,6 +22,24 @@ class PdfReportRepository implements ReportRepository {
     AnalysisResult analysis, {
     Uint8List? imageBytes,
   }) async {
+    Uint8List? reportImage = imageBytes;
+    if (imageBytes != null) {
+      final decoded = img.decodeImage(imageBytes);
+      if (decoded == null) {
+        throw const FormatException('Imagen no válida para el PDF');
+      }
+      final maxSide = decoded.width > decoded.height
+          ? decoded.width
+          : decoded.height;
+      if (maxSide > 1200) {
+        final resized = img.copyResize(
+          decoded,
+          width: (decoded.width * 1200 / maxSide).round(),
+          height: (decoded.height * 1200 / maxSide).round(),
+        );
+        reportImage = Uint8List.fromList(img.encodeJpg(resized, quality: 90));
+      }
+    }
     final regular = pw.Font.ttf(
       await rootBundle.load('assets/Lato-Regular.ttf'),
     );
@@ -55,18 +74,18 @@ class PdfReportRepository implements ReportRepository {
           pw.SizedBox(height: 16),
           pw.Text('Análisis: ${analysis.displayName ?? 'Análisis sin nombre'}'),
           pw.Text('Fecha y hora: $dateText'),
-          if (imageBytes != null) ...[
+          if (reportImage != null) ...[
             pw.SizedBox(height: 12),
             pw.Container(
               width: 130,
               height: 130,
               child: pw.Image(
-                pw.MemoryImage(imageBytes),
+                pw.MemoryImage(reportImage),
                 fit: pw.BoxFit.contain,
               ),
             ),
             pw.Text(
-              'Imagen disponible solo durante esta sesión.',
+              'Imagen original asociada al análisis, adaptada para el reporte.',
               style: const pw.TextStyle(fontSize: 9),
             ),
           ],

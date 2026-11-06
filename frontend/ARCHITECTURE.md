@@ -53,11 +53,12 @@ expone carga/error del historial. La inferencia depende del modelo cargado en
 el backend y no ocurre en Flutter. El modo mock continúa separado para demos.
 Ver `API_SETUP.md` para conexión local, emulador, teléfono y servidor publicado.
 
-La nueva interfaz real utiliza `PreviewRepository`: previsualiza la inferencia
-sin insertar, conserva el comprobante firmado en memoria y lo guarda solo tras
-la acción del usuario. El registro persistido conserva las puntuaciones y
-metadatos; la imagen se mantiene temporalmente en memoria, se elimina al cerrar
-sesión y nunca se incluye en un PDF histórico si ya no está disponible.
+La interfaz real utiliza `PreviewRepository`: previsualiza la inferencia sin
+insertar ni guardar el archivo. Solo tras confirmar, `SaveAnalysis` reenvía el
+original y el comprobante firmado a `/analyses/save-with-image`; Render guarda
+el archivo en un bucket privado y el registro enlaza su ruta. El repositorio
+`AnalysisImageRepository` recupera el original para el detalle y el PDF aun
+después de reiniciar. Las filas antiguas siguen siendo legibles sin imagen.
 En Android con Supabase, `PendingAnalysisRepository` conserva pendientes cifrados
 por UUID en SQLCipher y archivos AES-GCM después del consentimiento explícito.
 Los pendientes persisten tras cerrar sesión y se separan por cuenta.
@@ -70,5 +71,5 @@ se exige una previsualización y confirmación nuevas. `android:allowBackup=fals
 genera un PDF local desde un registro guardado y lo abre o comparte mediante
 un adaptador de `printing` en `data/`. Las vistas no importan el plugin. El PDF,
 el resultado temporal y el detalle muestran el mismo gráfico de cuatro clases
-sin tabla duplicada. Las operaciones reales requieren el backend v2
-documentado en `back/ANALYSIS_SAVE_V2.md`.
+sin tabla duplicada. El guardado con original requiere desplegar el backend y
+la migración descritos en `back/ANALYSIS_IMAGES.md` antes de actualizar la app.

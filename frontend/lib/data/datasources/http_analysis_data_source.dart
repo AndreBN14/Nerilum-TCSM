@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -57,6 +58,11 @@ class HttpAnalysisDataSource {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       if (response.statusCode == 404) throw const AnalysisNotFound();
       if (response.statusCode == 503) {
+        if (request.url.path.endsWith('/analyses/save-with-image')) {
+          throw const AnalysisUnavailable(
+            'No se pudo guardar la imagen. El almacenamiento no está disponible; inténtalo más tarde.',
+          );
+        }
         throw const AnalysisUnavailable(
           'El backend o el modelo no están disponibles. Inténtalo más tarde.',
         );
@@ -157,17 +163,21 @@ class HttpAnalysisDataSource {
   }
 
   Future<AnalysisResult> savePreview(
-    AnalysisPreview preview, {
+    AnalysisPreview preview,
+    SelectedImage image, {
     String? displayName,
   }) async {
-    final request = http.Request('POST', baseUri.resolve('analyses/save'));
-    request.headers['Content-Type'] = 'application/json';
-    request.body = jsonEncode({
-      'save_proof': preview.saveProof,
-      'display_name': displayName?.trim().isEmpty == true
-          ? null
-          : displayName?.trim(),
-    });
+    final request = http.MultipartRequest(
+      'POST',
+      baseUri.resolve('analyses/save-with-image'),
+    );
+    request.fields['save_proof'] = preview.saveProof;
+    if (displayName != null && displayName.trim().isNotEmpty) {
+      request.fields['display_name'] = displayName.trim();
+    }
+    request.files.add(
+      http.MultipartFile.fromBytes('file', image.bytes, filename: image.name),
+    );
     final json = await _send(request);
     try {
       return AnalysisResultDto.fromJson(json);
@@ -176,6 +186,65 @@ class HttpAnalysisDataSource {
         'El backend devolvió un guardado no válido. Revisa el historial.',
       );
     }
+  }
+
+  Future<Uint8List> loadImage(String id) async {
+    if (!RegExp(r'^an_[a-f0-9]+$').hasMatch(id)) {
+      throw const AnalysisFailure('Identificador de análisis inválido.');
+    }
+    String? token;
+    try {
+      token = await accessToken();
+    } on AnalysisNetworkFailure {
+      rethrow;
+    } catch (_) {
+      throw const AnalysisFailure(
+        'No se pudo recuperar la sesión. Vuelve a iniciar sesión.',
+      );
+    }
+    if (token == null || token.isEmpty) {
+      throw const AnalysisFailure('Inicia sesión para acceder al backend.');
+    }
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            baseUri.resolve('analyses/$id/image'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw const AnalysisNetworkFailure(
+        'La imagen tardó demasiado en descargarse.',
+      );
+    } on http.ClientException {
+      throw const AnalysisNetworkFailure('No se pudo descargar la imagen.');
+    }
+    if (response.statusCode != 200) {
+      throw AnalysisFailure(
+        response.statusCode == 404
+            ? 'La imagen de este análisis no está disponible.'
+            : 'No se pudo descargar la imagen del análisis.',
+      );
+    }
+    final bytes = response.bodyBytes;
+    final mime = response.headers['content-type']?.split(';').first.trim();
+    final jpeg =
+        bytes.length >= 3 &&
+        bytes[0] == 0xff &&
+        bytes[1] == 0xd8 &&
+        bytes[2] == 0xff;
+    final png =
+        bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4e &&
+        bytes[3] == 0x47;
+    if (bytes.length > 10 * 1024 * 1024 ||
+        !((mime == 'image/jpeg' && jpeg) || (mime == 'image/png' && png))) {
+      throw const AnalysisFailure('La imagen descargada no es válida.');
+    }
+    return bytes;
   }
 
   Future<List<AnalysisResult>> history() async {

@@ -1,5 +1,9 @@
 # Contrato incremental: analizar antes de guardar (v2)
 
+> La extensión que conserva el original después de confirmar Guardar se
+> documenta en `ANALYSIS_IMAGES.md`. Este contrato JSON se mantiene para APK
+> anteriores.
+
 Estado: implementación local con pruebas automatizadas. Pendiente despliegue y
 prueba autenticada contra Render/PostgreSQL. Mantener `POST /api/v1/analyses`
 actual para los APK anteriores hasta completar una transición controlada.

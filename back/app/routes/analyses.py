@@ -8,6 +8,7 @@ solo si el modelo está cargado; si no, ``POST /analyses`` responde 503.
 from __future__ import annotations
 
 import logging
+import hashlib
 import unicodedata
 from datetime import datetime, timezone
 from typing import Annotated
@@ -37,7 +38,7 @@ from app.schemas.error import ErrorResponse
 from app.schemas.error import COMMON_ERRORS
 from app.schemas.prediction import AnalysisPrediction
 from app.services.analyses import AnalysisRecord
-from app.services.images import too_large_error, validate_image
+from app.services.images import JPEG_MAGIC, PNG_MAGIC, too_large_error, validate_image
 from app.services.inference import DISCLAIMER, InferenceError
 from app.services.container import Services
 
@@ -100,6 +101,7 @@ def _to_out(record: AnalysisRecord) -> AnalysisOut:
             probability=record.probability,
             scores=scores,
             is_demo=record.is_demo,
+            has_image=record.image_path is not None,
             model=ModelMetadata(
                 name=record.model_name,
                 version=record.model_version,
@@ -140,6 +142,7 @@ def _summary_from_record(record: AnalysisRecord) -> AnalysisSummary:
         probability=record.probability,
         scores=scores,
         is_demo=record.is_demo,
+        has_image=record.image_path is not None,
         model_name=record.model_name,
         model_version=f"{record.model_name}@{record.model_version}",
         model_dataset=record.model_dataset,
@@ -227,6 +230,14 @@ async def create_analysis(
         idempotency_key=idempotency_key,
         request_hash=request_hash,
     )
+    if services.image_storage is not None:
+        mime = "image/jpeg" if data.startswith(JPEG_MAGIC) else "image/png"
+        extension = "jpg" if mime == "image/jpeg" else "png"
+        record.image_path = f"{user.id}/{record.id}.{extension}"
+        record.image_sha256 = hashlib.sha256(data).hexdigest()
+        record.image_mime_type = mime
+        record.fixed_id = True
+        await run_in_threadpool(services.image_storage.put, record.image_path, data, mime)
     # Validar también el registro completo antes de cualquier INSERT.
     _to_out(record)
     persisted = await run_in_threadpool(services.analyses.create, record)
@@ -244,7 +255,8 @@ async def preview_analysis(
     data = await _read_upload(file, settings.max_image_bytes)
     prediction, model = await _predict(data, services, settings)
     payload, proof = issue_proof(user_id=str(user.id), prediction=prediction,
-                                 model=model, secret=settings.analysis_proof_secret)
+                                 model=model, secret=settings.analysis_proof_secret,
+                                 image_sha256=hashlib.sha256(data).hexdigest())
     return AnalysisPreview(
         preview_id=payload["preview_id"], category=prediction.category,
         probability=prediction.probability, scores=prediction.scores,
@@ -292,6 +304,90 @@ async def save_analysis(
     if saved is not record:
         response.status_code = 200
     return _to_out(saved)
+
+
+@router.post("/save-with-image", response_model=AnalysisOut, status_code=201, responses=COMMON_ERRORS)
+async def save_analysis_with_image(
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    services: Annotated[Services, Depends(get_services)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    response: Response,
+    file: UploadFile = File(..., description="Imagen original JPG/JPEG/PNG"),
+    save_proof: str = Form(...),
+    display_name: str | None = Form(default=None),
+) -> AnalysisOut:
+    name = _clean_display_name(display_name)
+    receipt = verify_proof(save_proof, user_id=str(user.id),
+                           secret=settings.analysis_proof_secret)
+    if receipt["v"] != 2:
+        raise ApiException(422, "validation_error", "Vuelve a previsualizar la imagen antes de guardarla.")
+    if services.image_storage is None:
+        raise ApiException(503, "storage_unavailable", "El almacenamiento de imágenes no está configurado.")
+    data = await _read_upload(file, settings.max_image_bytes)
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != receipt["image_sha256"]:
+        raise ApiException(422, "validation_error", "La imagen no corresponde al resultado previsualizado.")
+    operation_id = receipt["preview_id"]
+    request_hash = save_request_hash(operation_id, name, digest)
+    existing = await run_in_threadpool(services.analyses.get_by_idempotency_key,
+                                      str(user.id), operation_id, request_hash)
+    if existing is not None:
+        if existing.image_path is None:
+            raise ApiException(409, "idempotency_conflict", "El resultado existente no tiene imagen asociada.")
+        try:
+            stored_image = await run_in_threadpool(services.image_storage.get, existing.image_path)
+        except ApiException as exc:
+            if exc.status_code != 404:
+                raise
+            await run_in_threadpool(services.image_storage.put, existing.image_path,
+                                    data, existing.image_mime_type)
+            stored_image = data
+        if hashlib.sha256(stored_image).hexdigest() != digest:
+            raise ApiException(503, "storage_unavailable", "La imagen almacenada no coincide con el análisis.")
+        response.status_code = 200
+        return _to_out(existing)
+    if datetime.now(timezone.utc) > receipt["expiration"]:
+        raise ApiException(422, "validation_error", "La previsualización expiró. Analiza la imagen de nuevo.")
+    await run_in_threadpool(validate_image, data, max_bytes=settings.max_image_bytes,
+                            max_dimension=settings.max_image_dimension,
+                            max_pixels=settings.max_image_pixels)
+    mime = "image/jpeg" if data.startswith(JPEG_MAGIC) else "image/png"
+    extension = "jpg" if mime == "image/jpeg" else "png"
+    path = f"{user.id}/{operation_id}.{extension}"
+    await run_in_threadpool(services.image_storage.put, path, data, mime)
+    prediction = receipt["prediction"]
+    model = receipt["model_info"]
+    record = AnalysisRecord(
+        id=operation_id, account_id=str(user.id), category=prediction.category.value,
+        probability=prediction.probability, scores=prediction.scores.model_dump(),
+        display_name=name, created_at=receipt["created_at"],
+        model_name=model.name, model_version=model.version, model_dataset=model.dataset,
+        idempotency_key=operation_id, request_hash=request_hash, fixed_id=True,
+        image_path=path, image_sha256=digest, image_mime_type=mime,
+    )
+    _to_out(record)
+    saved = await run_in_threadpool(services.analyses.create, record)
+    if saved is not record:
+        response.status_code = 200
+    return _to_out(saved)
+
+
+@router.get("/{analysis_id}/image", responses=COMMON_ERRORS)
+async def get_analysis_image(
+    analysis_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    services: Annotated[Services, Depends(get_services)],
+) -> Response:
+    record = await run_in_threadpool(services.analyses.get_by_account, analysis_id, str(user.id))
+    if record is None or record.image_path is None:
+        raise ApiException(404, "not_found", "Imagen no encontrada.")
+    if services.image_storage is None:
+        raise ApiException(503, "storage_unavailable", "El almacenamiento de imágenes no está disponible.")
+    content = await run_in_threadpool(services.image_storage.get, record.image_path)
+    if hashlib.sha256(content).hexdigest() != record.image_sha256:
+        raise ApiException(503, "storage_unavailable", "La imagen almacenada no coincide con el análisis.")
+    return Response(content=content, media_type=record.image_mime_type,
+                    headers={"Cache-Control": "private, no-store"})
 
 
 @router.get("", response_model=AnalysisList, responses=COMMON_ERRORS)

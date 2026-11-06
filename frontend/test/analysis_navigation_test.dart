@@ -51,7 +51,8 @@ class _Analysis implements AnalysisRepository, PreviewRepository {
 
   @override
   Future<AnalysisResult> save(
-    AnalysisPreview preview, {
+    AnalysisPreview preview,
+    SelectedImage image, {
     String? displayName,
   }) async {
     if (failSave) throw const AnalysisFailure('No se pudo guardar.');

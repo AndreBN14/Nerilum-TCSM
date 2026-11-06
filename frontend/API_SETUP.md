@@ -121,10 +121,13 @@ Para publicar Flutter web, autorizar también su origen exacto en CORS.
   si el cliente intenta guardarlo con otra clave. No hay reenvíos automáticos.
   El timeout predeterminado sigue siendo de 120 segundos.
 - Los APK anteriores siguen usando la ruta legada con `Idempotency-Key`.
-- Las imágenes de análisis online viven temporalmente en memoria; los pendientes
-  aceptados explícitamente se guardan cifrados en almacenamiento privado Android
-  hasta descartarlos o guardar el resultado. Los registros históricos no conservan
-  la imagen en Render y el PDF la omite si ya no está disponible.
+- El original online permanece en memoria hasta confirmar el guardado; entonces
+  se envía con el comprobante y queda en el bucket privado vinculado al análisis.
+  Los pendientes aceptados se guardan cifrados en Android hasta descartar o
+  confirmar que el resultado y su imagen están guardados. Detalle y PDF pueden
+  recuperar el original después de reiniciar. Registros previos sin original
+  conservan el PDF sin imagen. Consultar `back/ANALYSIS_IMAGES.md` para el
+  orden de despliegue y las variables privadas necesarias en Render.
 - La cola offline Android intenta previsualizar pendientes con la app activa.
   El guardado requiere confirmar el resultado; ante un timeout comprueba
   `/analyses/{id}` y reintenta el mismo comprobante y nombre. No usa la ruta

@@ -10,6 +10,7 @@ class AnalysisResult {
     this.modelName,
     this.modelVersion,
     this.modelDataset,
+    this.hasImage = false,
   });
 
   // La categoría debe corresponder exactamente a la etiqueta del modelo.
@@ -25,4 +26,5 @@ class AnalysisResult {
   final String? modelName;
   final String? modelVersion;
   final String? modelDataset;
+  final bool hasImage;
 }

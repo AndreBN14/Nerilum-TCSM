@@ -20,6 +20,8 @@ class AnalysisDetailView extends StatelessWidget {
     this.onExport,
     this.onShare,
     this.exporting = false,
+    this.imageLoading = false,
+    this.imageError,
   });
 
   final AnalysisResult result;
@@ -28,6 +30,8 @@ class AnalysisDetailView extends StatelessWidget {
   final VoidCallback? onExport;
   final VoidCallback? onShare;
   final bool exporting;
+  final bool imageLoading;
+  final String? imageError;
 
   @override
   Widget build(BuildContext context) {
@@ -76,6 +80,15 @@ class AnalysisDetailView extends StatelessWidget {
                   dateStr: dateStr,
                   colors: colors,
                 ),
+                if (imageLoading) const LinearProgressIndicator(),
+                if (imageError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      imageError!,
+                      style: TextStyle(color: colors.error),
+                    ),
+                  ),
 
                 const SizedBox(height: 12),
 
@@ -92,6 +105,7 @@ class AnalysisDetailView extends StatelessWidget {
                 // ── Acciones de exportar ──────────────────────────────────
                 _ExportActions(
                   exporting: exporting,
+                  imageLoading: imageLoading,
                   onExport: onExport,
                   onShare: onShare,
                   colors: colors,
@@ -173,6 +187,7 @@ class _HeaderCard extends StatelessWidget {
                             Image.memory(
                               imageBytes!,
                               fit: BoxFit.cover,
+                              cacheWidth: 256,
                               errorBuilder: (_, _, _) => Icon(
                                 Icons.broken_image_outlined,
                                 color: colors.textSecondary,
@@ -219,10 +234,7 @@ class _HeaderCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   dateStr,
-                  style: TextStyle(
-                    color: colors.textSecondary,
-                    fontSize: 13,
-                  ),
+                  style: TextStyle(color: colors.textSecondary, fontSize: 13),
                 ),
               ],
             ),
@@ -287,12 +299,14 @@ class _ResultCard extends StatelessWidget {
 class _ExportActions extends StatelessWidget {
   const _ExportActions({
     required this.exporting,
+    required this.imageLoading,
     required this.onExport,
     required this.onShare,
     required this.colors,
   });
 
   final bool exporting;
+  final bool imageLoading;
   final VoidCallback? onExport;
   final VoidCallback? onShare;
   final NerilumPalette colors;
@@ -305,7 +319,7 @@ class _ExportActions extends StatelessWidget {
         MintButton(
           label: exporting ? 'Generando PDF\u2026' : 'Exportar reporte PDF',
           icon: exporting ? Icons.hourglass_top : Icons.picture_as_pdf_outlined,
-          onPressed: exporting ? null : onExport,
+          onPressed: exporting || imageLoading ? null : onExport,
         ),
       ],
     );

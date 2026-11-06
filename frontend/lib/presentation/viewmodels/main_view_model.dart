@@ -383,8 +383,10 @@ class MainViewModel extends ChangeNotifier {
         saveProof: item.saveProof!,
         expiresAt: item.proofExpiresAt!,
       );
+      final selected = await pendingRepository!.image(owner, id);
       final saved = await saveAnalysis!(
         prepared,
+        selected,
         displayName: item.displayName,
       );
       await pendingRepository!.complete(owner, id);
@@ -397,7 +399,13 @@ class MainViewModel extends ChangeNotifier {
   }
 
   Future<void> savePreview() async {
-    if (preview == null || saveAnalysis == null || saving || processing) return;
+    if (preview == null ||
+        image == null ||
+        saveAnalysis == null ||
+        saving ||
+        processing) {
+      return;
+    }
     final session = _sessionVersion;
     saving = true;
     error = null;
@@ -423,7 +431,7 @@ class MainViewModel extends ChangeNotifier {
         _saveCommitted = true;
       }
       final saved = localId == null
-          ? await saveAnalysis!(preview!, displayName: name)
+          ? await saveAnalysis!(preview!, image!, displayName: name)
           : await resumePendingSave(localId);
       if (saved == null) {
         preview = null;

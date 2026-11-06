@@ -67,6 +67,7 @@ class AnalysisOut(BaseModel):
     probability: Probability
     scores: Scores
     is_demo: bool = False
+    has_image: bool = False
     model: ModelMetadata
     disclaimer: str = DISCLAIMER
 
@@ -79,6 +80,7 @@ class AnalysisSummary(BaseModel):
     probability: Probability
     scores: Scores
     is_demo: bool = False
+    has_image: bool = False
     model_name: str
     model_version: str  # formato "name@version"
     model_dataset: str

@@ -9,6 +9,7 @@ class AnalysisResultDto {
     final name = json['display_name'];
     final scores = json['scores'];
     final model = json['model'];
+    final hasImage = json['has_image'];
     if (id is! String ||
         id.isEmpty ||
         category is! String ||
@@ -19,6 +20,7 @@ class AnalysisResultDto {
         probability < 0 ||
         probability > 1 ||
         (name != null && name is! String) ||
+        (hasImage != null && hasImage is! bool) ||
         scores is! Map<String, dynamic>) {
       throw const FormatException('Resultado de análisis no válido.');
     }
@@ -41,6 +43,7 @@ class AnalysisResultDto {
       probability: probability.toDouble(),
       scores: Map.unmodifiable(values),
       isDemo: json['is_demo'] == true,
+      hasImage: hasImage == true,
       modelName: model is Map<String, dynamic>
           ? model['name'] as String?
           : json['model_name'] as String?,

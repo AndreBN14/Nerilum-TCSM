@@ -188,6 +188,7 @@ def build_app(
     inference: InferenceStatus | None = None,
     db_path: Path | None = None,
     settings_overrides: dict[str, object] | None = None,
+    image_storage=None,
 ) -> FastAPI:
     overrides: dict[str, object] = {
         "supabase_url": SUPABASE_URL,
@@ -202,6 +203,7 @@ def build_app(
         inference=inference if inference is not None else UnavailableInference(),
         token_verifier=verifier,
         analyses=SqliteAnalysisRepository(settings.database_path),
+        image_storage=image_storage,
     )
     return create_app(settings, services)
 

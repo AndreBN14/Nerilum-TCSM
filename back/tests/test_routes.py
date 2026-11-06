@@ -43,5 +43,7 @@ def test_openapi_exposes_expected_routes(tmp_path) -> None:
         "/api/v1/analyses",
         "/api/v1/analyses/preview",
         "/api/v1/analyses/save",
+        "/api/v1/analyses/save-with-image",
+        "/api/v1/analyses/{analysis_id}/image",
         "/api/v1/analyses/{analysis_id}",
     }

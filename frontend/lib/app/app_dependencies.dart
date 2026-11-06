@@ -14,6 +14,7 @@ import '../data/repositories/mock_analysis_repository.dart';
 import '../domain/models/appearance.dart';
 import '../domain/repositories/account_repository.dart';
 import '../domain/repositories/analysis_repository.dart';
+import '../domain/repositories/analysis_image_repository.dart';
 import '../domain/repositories/pending_analysis_repository.dart';
 import '../domain/repositories/preview_repository.dart';
 import '../domain/usecases/preview_use_cases.dart';
@@ -63,6 +64,9 @@ class AppDependencies {
           const MockAnalysisDataSource(),
           accountRepository,
         );
+    analysisImageRepository = analysisRepository is AnalysisImageRepository
+        ? analysisRepository as AnalysisImageRepository
+        : null;
     final PreviewRepository? previewRepository =
         analysisRepository is PreviewRepository
         ? analysisRepository as PreviewRepository
@@ -105,6 +109,7 @@ class AppDependencies {
   }
 
   late final AccountRepository accountRepository;
+  late final AnalysisImageRepository? analysisImageRepository;
   late final AppearanceViewModel appearanceViewModel;
   late final MainViewModel mainViewModel;
   final SessionController sessionController = SessionController();
@@ -138,6 +143,7 @@ class AppDependencies {
   ReportViewModel createReportViewModel() => ReportViewModel(
     GenerateReport(const PdfReportRepository()),
     PresentReport(const PrintingReportOutputRepository()),
+    loadImage: analysisImageRepository?.loadImage,
   );
 
   void dispose() {
