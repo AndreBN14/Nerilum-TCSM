@@ -1,4 +1,4 @@
-"""Comprobante firmado de inferencia, vinculado al usuario y sin imagen."""
+"""Comprobante firmado; v2 vincula SHA-256, nunca incluye bytes de imagen."""
 
 import base64
 import binascii
@@ -32,13 +32,13 @@ def require_secret(secret: str) -> bytes:
 
 
 def issue_proof(*, user_id: str, prediction: AnalysisPrediction,
-                model: ModelMetadata, secret: str) -> tuple[dict, str]:
+                model: ModelMetadata, secret: str, image_sha256: str | None = None) -> tuple[dict, str]:
     key = require_secret(secret)
     now = datetime.now(timezone.utc)
     issued_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     expires_at = (now + PROOF_LIFETIME).strftime("%Y-%m-%dT%H:%M:%SZ")
     payload = {
-        "v": 1,
+        "v": 2 if image_sha256 is not None else 1,
         "user_id": user_id,
         "preview_id": f"an_{secrets.token_hex(16)}",
         "created_at": issued_at,
@@ -48,6 +48,10 @@ def issue_proof(*, user_id: str, prediction: AnalysisPrediction,
         "scores": prediction.scores.model_dump(),
         "model": model.model_dump(),
     }
+    if image_sha256 is not None:
+        if len(image_sha256) != 64 or any(c not in "0123456789abcdef" for c in image_sha256):
+            raise ValueError("Huella de imagen inválida")
+        payload["image_sha256"] = image_sha256
     encoded = _encode(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     signature = _encode(hmac.digest(key, encoded.encode("ascii"), "sha256"))
     return payload, f"{encoded}.{signature}"
@@ -64,8 +68,12 @@ def verify_proof(proof: str, *, user_id: str, secret: str) -> dict:
         ):
             raise ValueError("Firma incorrecta")
         payload = json.loads(_decode(encoded))
-        if not isinstance(payload, dict) or payload.get("v") != 1 or payload.get("user_id") != user_id:
+        if not isinstance(payload, dict) or payload.get("v") not in (1, 2) or payload.get("user_id") != user_id:
             raise ValueError("Usuario o versión incorrectos")
+        if payload["v"] == 2:
+            digest = payload.get("image_sha256")
+            if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+                raise ValueError("Huella de imagen inválida")
         preview_id = payload["preview_id"]
         if not isinstance(preview_id, str) or not preview_id.startswith("an_") or len(preview_id) != 35:
             raise ValueError("Identificador incorrecto")
@@ -89,6 +97,10 @@ def verify_proof(proof: str, *, user_id: str, secret: str) -> dict:
         raise ApiException(422, "validation_error", "El comprobante de análisis no es válido.") from exc
 
 
-def save_request_hash(preview_id: str, display_name: str | None) -> str:
-    data = json.dumps([preview_id, display_name], ensure_ascii=False, separators=(",", ":"))
+def save_request_hash(preview_id: str, display_name: str | None,
+                      image_sha256: str | None = None) -> str:
+    fields = [preview_id, display_name]
+    if image_sha256 is not None:
+        fields.append(image_sha256)
+    data = json.dumps(fields, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(data.encode("utf-8")).hexdigest()

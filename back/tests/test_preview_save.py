@@ -1,6 +1,7 @@
 """Flujo v2: inferir sin insertar y guardar solo tras la decisión del usuario."""
 
 import base64
+import hashlib
 import hmac
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -21,9 +22,32 @@ def _png():
     return buffer.getvalue()
 
 
-def _app(stub, inference=None, secret=SECRET):
+def _app(stub, inference=None, secret=SECRET, storage=None):
     return build_app(build_verifier(stub), inference=inference or FakeInference(),
-                     settings_overrides={"analysis_proof_secret": secret})
+                     settings_overrides={"analysis_proof_secret": secret}, image_storage=storage)
+
+
+class MemoryStorage:
+    def __init__(self):
+        self.objects = {}
+        self.fail = False
+
+    def put(self, path, data, mime):
+        if self.fail:
+            from app.core.errors import ApiException
+            raise ApiException(503, "storage_unavailable", "No se pudo guardar la imagen.")
+        if path in self.objects and self.objects[path] != data:
+            raise AssertionError("Se intentó sobrescribir una imagen")
+        self.objects[path] = data
+
+    def get(self, path):
+        if path not in self.objects:
+            from app.core.errors import ApiException
+            raise ApiException(404, "not_found", "Imagen no encontrada.")
+        return self.objects[path]
+
+    def close(self):
+        pass
 
 
 def _headers(keypair, sub=None):
@@ -155,3 +179,112 @@ def test_concurrent_save_of_same_proof_has_one_record(stub, keypair):
     assert sorted(r.status_code for r in results) == [200, 201]
     assert results[0].json() == results[1].json()
     assert count == 1
+
+
+def test_save_original_only_after_confirmation_and_download_is_private(stub, keypair):
+    storage = MemoryStorage()
+    with TestClient(_app(stub, storage=storage)) as client:
+        alice = _headers(keypair)
+        proof = _preview(client, alice).json()["save_proof"]
+        assert storage.objects == {}
+        data = {"save_proof": proof, "display_name": " Estudio "}
+        files = {"file": ("scan.png", _png(), "image/png")}
+        first = client.post("/api/v1/analyses/save-with-image", headers=alice, data=data, files=files)
+        second = client.post("/api/v1/analyses/save-with-image", headers=alice, data=data, files=files)
+        analysis_id = first.json()["id"]
+        image = client.get(f"/api/v1/analyses/{analysis_id}/image", headers=alice)
+        denied = client.get(f"/api/v1/analyses/{analysis_id}/image",
+                            headers=_headers(keypair, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
+        history = client.get("/api/v1/analyses", headers=alice).json()
+    assert [first.status_code, second.status_code] == [201, 200]
+    assert first.json()["has_image"] is True
+    assert first.json() == second.json()
+    assert history["items"][0]["has_image"] is True
+    assert image.status_code == 200 and image.content == _png()
+    assert image.headers["content-type"].startswith("image/png")
+    assert image.headers["cache-control"] == "private, no-store"
+    assert denied.status_code == 404
+    assert len(storage.objects) == 1
+    assert hashlib.sha256(next(iter(storage.objects.values()))).hexdigest()
+
+
+def test_save_rejects_changed_image_and_storage_failure_preserves_no_record(stub, keypair):
+    storage = MemoryStorage()
+    with TestClient(_app(stub, storage=storage)) as client:
+        headers = _headers(keypair)
+        preview = _preview(client, headers).json()
+        altered = BytesIO()
+        Image.new("RGB", (16, 16), "red").save(altered, format="PNG")
+        wrong = client.post("/api/v1/analyses/save-with-image", headers=headers,
+                            data={"save_proof": preview["save_proof"]},
+                            files={"file": ("other.png", altered.getvalue(), "image/png")})
+        storage.fail = True
+        blocked = client.post("/api/v1/analyses/save-with-image", headers=headers,
+                              data={"save_proof": preview["save_proof"]},
+                              files={"file": ("scan.png", _png(), "image/png")})
+        assert client.get("/api/v1/analyses", headers=headers).json()["total"] == 0
+        storage.fail = False
+        saved = client.post("/api/v1/analyses/save-with-image", headers=headers,
+                            data={"save_proof": preview["save_proof"]},
+                            files={"file": ("scan.png", _png(), "image/png")})
+    assert wrong.status_code == 422
+    assert blocked.status_code == 503
+    assert saved.status_code == 201
+
+
+def test_old_json_save_keeps_working_without_storage(stub, keypair):
+    with TestClient(_app(stub)) as client:
+        headers = _headers(keypair)
+        proof = _preview(client, headers).json()["save_proof"]
+        old = _save(client, headers, proof)
+        image = client.get(f"/api/v1/analyses/{old.json()['id']}/image", headers=headers)
+    assert old.status_code == 201 and old.json()["has_image"] is False
+    assert image.status_code == 404
+
+
+def test_legacy_upload_includes_original_when_storage_is_enabled(stub, keypair):
+    storage = MemoryStorage()
+    with TestClient(_app(stub, storage=storage)) as client:
+        headers = _headers(keypair)
+        created = client.post("/api/v1/analyses", headers=headers,
+                              files={"file": ("scan.png", _png(), "image/png")})
+        image = client.get(f"/api/v1/analyses/{created.json()['id']}/image", headers=headers)
+    assert created.status_code == 201
+    assert created.json()["has_image"] is True
+    assert image.content == _png()
+
+
+def test_replaying_saved_image_repairs_missing_object(stub, keypair):
+    storage = MemoryStorage()
+    with TestClient(_app(stub, storage=storage)) as client:
+        headers = _headers(keypair)
+        proof = _preview(client, headers).json()["save_proof"]
+        data = {"save_proof": proof}
+        files = {"file": ("scan.png", _png(), "image/png")}
+        first = client.post("/api/v1/analyses/save-with-image", headers=headers,
+                            data=data, files=files)
+        storage.objects.clear()
+        replay = client.post("/api/v1/analyses/save-with-image", headers=headers,
+                             data=data, files=files)
+        recovered = client.get(f"/api/v1/analyses/{first.json()['id']}/image", headers=headers)
+    assert first.status_code == 201 and replay.status_code == 200
+    assert recovered.status_code == 200 and recovered.content == _png()
+
+
+def test_concurrent_image_saves_keep_one_record_and_one_original(stub, keypair):
+    storage = MemoryStorage()
+    with TestClient(_app(stub, storage=storage)) as client:
+        headers = _headers(keypair)
+        proof = _preview(client, headers).json()["save_proof"]
+
+        def save():
+            return client.post("/api/v1/analyses/save-with-image", headers=headers,
+                               data={"save_proof": proof, "display_name": "Estudio"},
+                               files={"file": ("scan.png", _png(), "image/png")})
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = list(executor.map(lambda _: save(), range(2)))
+        total = client.get("/api/v1/analyses", headers=headers).json()["total"]
+    assert sorted(response.status_code for response in results) == [200, 201]
+    assert results[0].json() == results[1].json()
+    assert total == 1 and len(storage.objects) == 1
