@@ -8,6 +8,7 @@ from app.core.security import SupabaseJWTVerifier, TokenVerifier
 from app.services.analyses import AnalysisRepository, SqliteAnalysisRepository
 from app.services.analyses_pg import PostgresAnalysisRepository
 from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
+from app.services.image_storage import ImageStorage, SupabaseImageStorage
 
 logger = logging.getLogger("nerilum")
 
@@ -19,6 +20,7 @@ class Services:
     inference: InferenceStatus
     token_verifier: TokenVerifier
     analyses: AnalysisRepository
+    image_storage: ImageStorage | None = None
 
     async def aclose(self) -> None:
         closer = getattr(self.token_verifier, "aclose", None)
@@ -27,6 +29,8 @@ class Services:
         closer = getattr(self.analyses, "close", None)
         if closer is not None:
             closer()
+        if self.image_storage is not None:
+            self.image_storage.close()
 
 
 def _resolve_model_dir(settings: Settings):
@@ -68,10 +72,18 @@ def create_services(settings: Settings) -> Services:
     inference = _build_inference(settings)
     if settings.use_postgres and settings.database_url:
         analyses = PostgresAnalysisRepository(settings.database_url)
+        if settings.supabase_service_role_key:
+            analyses.require_image_schema()
     else:
         analyses = SqliteAnalysisRepository(settings.database_path)
 
-    services = Services(inference=inference, token_verifier=verifier, analyses=analyses)
+    image_storage = (
+        SupabaseImageStorage(settings.supabase_url, settings.supabase_service_role_key,
+                             settings.analysis_images_bucket)
+        if settings.supabase_service_role_key else None
+    )
+    services = Services(inference=inference, token_verifier=verifier, analyses=analyses,
+                        image_storage=image_storage)
 
     # Semilla de demostración: solo desarrollo, opcional e idempotente.
     if (

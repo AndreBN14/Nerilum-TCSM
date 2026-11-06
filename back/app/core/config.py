@@ -67,6 +67,8 @@ class Settings(BaseSettings):
     seed_demo: bool = False
     seed_demo_account_id: UUID | None = None
     analysis_proof_secret: str = ""
+    supabase_service_role_key: str = ""
+    analysis_images_bucket: str = "analysis-images"
 
     @property
     def use_postgres(self) -> bool:

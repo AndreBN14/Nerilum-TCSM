@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS analyses (
   created_at    TIMESTAMPTZ NOT NULL,
   idempotency_key TEXT,
   request_hash TEXT,
+  image_path TEXT,
+  image_sha256 TEXT,
+  image_mime_type TEXT,
   CONSTRAINT analyses_account_idempotency_key UNIQUE (account_id, idempotency_key),
   CONSTRAINT analyses_idempotency_pair CHECK (
     (idempotency_key IS NULL AND request_hash IS NULL) OR

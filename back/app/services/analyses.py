@@ -1,6 +1,6 @@
 """Persistencia del historial de análisis en SQLite.
 
-Solo se guarda el resultado del análisis (sin imágenes). Los registros se
+Se guardan el resultado y, si existe, la ruta del original privado; nunca sus bytes. Los registros se
 aíslan por ``account_id``, que corresponde al UUID validado del JWT de
 Supabase; nunca llega del cuerpo de la petición.
 """
@@ -70,6 +70,9 @@ class AnalysisRecord:
     created_at: str = field(default_factory=_now_iso)
     idempotency_key: str | None = None
     request_hash: str | None = None
+    image_path: str | None = None
+    image_sha256: str | None = None
+    image_mime_type: str | None = None
     fixed_id: bool = False  # Comprobante firmado: el ID no cambia por reintentos.
 
     def __post_init__(self) -> None:
@@ -92,6 +95,9 @@ class AnalysisRecord:
             created_at=_normalize_created_at(row["created_at"]),
             idempotency_key=row["idempotency_key"],
             request_hash=row["request_hash"],
+            image_path=row["image_path"],
+            image_sha256=row["image_sha256"],
+            image_mime_type=row["image_mime_type"],
         )
 
 
@@ -108,6 +114,7 @@ class AnalysisRepository(Protocol):
     def ensure_schema(self) -> None: ...
     def seed_demo(self, account_id: str, model_info: ModelInfo) -> int: ...
     def close(self) -> None: ...
+    def list_image_paths(self) -> set[str]: ...
 
 
 class SqliteAnalysisRepository:
@@ -123,6 +130,11 @@ class SqliteAnalysisRepository:
         conn = sqlite3.connect(self._path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def list_image_paths(self) -> set[str]:
+        with self._connect() as conn:
+            return {row[0] for row in conn.execute(
+                "SELECT image_path FROM analyses WHERE image_path IS NOT NULL")}
 
     def ensure_schema(self) -> None:
         with self._connect() as conn:
@@ -141,7 +153,10 @@ class SqliteAnalysisRepository:
                     model_dataset TEXT NOT NULL,
                     created_at    TEXT NOT NULL,
                     idempotency_key TEXT,
-                    request_hash    TEXT
+                    request_hash    TEXT,
+                    image_path      TEXT,
+                    image_sha256    TEXT,
+                    image_mime_type TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_analyses_account_created
                     ON analyses (account_id, created_at DESC);
@@ -150,7 +165,7 @@ class SqliteAnalysisRepository:
             # Actualización aditiva de SQLite local: preservar el historial existente.
             conn.execute("BEGIN IMMEDIATE")
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(analyses)")}
-            for column in ("idempotency_key", "request_hash"):
+            for column in ("idempotency_key", "request_hash", "image_path", "image_sha256", "image_mime_type"):
                 if column not in columns:
                     conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT")
             conn.execute(
@@ -167,8 +182,9 @@ class SqliteAnalysisRepository:
                         INSERT INTO analyses (
                             id, account_id, category, probability, scores_json,
                             display_name, is_demo, model_name, model_version,
-                            model_dataset, created_at, idempotency_key, request_hash
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            model_dataset, created_at, idempotency_key, request_hash,
+                            image_path, image_sha256, image_mime_type
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             record.id,
@@ -184,6 +200,9 @@ class SqliteAnalysisRepository:
                             record.created_at,
                             record.idempotency_key,
                             record.request_hash,
+                            record.image_path,
+                            record.image_sha256,
+                            record.image_mime_type,
                         ),
                     )
                     break

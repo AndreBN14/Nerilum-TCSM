@@ -86,6 +86,21 @@ class PostgresAnalysisRepository:
                 raise RuntimeError("Ejecuta migrations/004_analysis_idempotency.sql antes de arrancar.")
             conn.commit()
 
+    def require_image_schema(self) -> None:
+        with self._connect() as conn:
+            columns = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'analyses' "
+                "AND column_name IN ('image_path', 'image_sha256', 'image_mime_type')"
+            ).fetchall()
+        if len(columns) != 3:
+            raise RuntimeError("Ejecuta migrations/005_analysis_images.sql antes de habilitar imágenes.")
+
+    def list_image_paths(self) -> set[str]:
+        with self._connect() as conn:
+            return {row["image_path"] for row in conn.execute(
+                "SELECT image_path FROM analyses WHERE image_path IS NOT NULL")}
+
     def create(self, record: AnalysisRecord) -> AnalysisRecord:
         with self._connect() as conn:
             for _ in range(3):
@@ -95,8 +110,9 @@ class PostgresAnalysisRepository:
                         INSERT INTO analyses (
                             id, account_id, category, probability, scores_json,
                             display_name, is_demo, model_name, model_version,
-                            model_dataset, created_at, idempotency_key, request_hash
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            model_dataset, created_at, idempotency_key, request_hash,
+                            image_path, image_sha256, image_mime_type
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             record.id,
@@ -112,6 +128,9 @@ class PostgresAnalysisRepository:
                             record.created_at,
                             record.idempotency_key,
                             record.request_hash,
+                            record.image_path,
+                            record.image_sha256,
+                            record.image_mime_type,
                         ),
                     )
                     conn.commit()
@@ -167,6 +186,9 @@ class PostgresAnalysisRepository:
                     created_at=_pg_normalize_created_at(r["created_at"]),
                     idempotency_key=r["idempotency_key"],
                     request_hash=r["request_hash"],
+                    image_path=r["image_path"],
+                    image_sha256=r["image_sha256"],
+                    image_mime_type=r["image_mime_type"],
                 )
                 items.append(item)
             return items, int(total)
@@ -196,6 +218,9 @@ class PostgresAnalysisRepository:
             created_at=_pg_normalize_created_at(row["created_at"]),
             idempotency_key=row["idempotency_key"],
             request_hash=row["request_hash"],
+            image_path=row["image_path"],
+            image_sha256=row["image_sha256"],
+            image_mime_type=row["image_mime_type"],
         )
 
     def get_by_idempotency_key(
