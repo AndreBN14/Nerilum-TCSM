@@ -68,6 +68,23 @@ class _Analysis implements AnalysisRepository, PreviewRepository {
   }
 
   @override
+  Future<AnalysisResult> saveWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) async {
+    if (failSave) throw const AnalysisFailure('No se pudo guardar.');
+    saved++;
+    return AnalysisResult(
+      id: preview.result.id,
+      category: preview.result.category,
+      probability: preview.result.probability,
+      scores: preview.result.scores,
+      createdAt: preview.result.createdAt,
+      displayName: displayName,
+    );
+  }
+
+  @override
   Future<AnalysisResult> analyze(
     SelectedImage image, {
     String? displayName,

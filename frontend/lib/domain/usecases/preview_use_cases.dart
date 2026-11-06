@@ -19,3 +19,12 @@ class SaveAnalysis {
     String? displayName,
   }) => repository.save(preview, image, displayName: displayName);
 }
+
+class SaveAnalysisWithoutImage {
+  const SaveAnalysisWithoutImage(this.repository);
+  final PreviewRepository repository;
+  Future<AnalysisResult> call(
+    AnalysisPreview preview, {
+    String? displayName,
+  }) => repository.saveWithoutImage(preview, displayName: displayName);
+}

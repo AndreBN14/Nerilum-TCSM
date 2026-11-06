@@ -9,4 +9,8 @@ abstract class PreviewRepository {
     SelectedImage image, {
     String? displayName,
   });
+  Future<AnalysisResult> saveWithoutImage(
+    AnalysisPreview preview, {
+    String? displayName,
+  });
 }
