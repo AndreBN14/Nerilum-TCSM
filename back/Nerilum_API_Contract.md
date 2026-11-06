@@ -1,5 +1,10 @@
 # Nerilum API: contrato v1
 
+> Este documento conserva decisiones históricas de v1. Para el contrato actual
+> de previsualización y guardado consultar `ANALYSIS_SAVE_V2.md` y para el
+> guardado del archivo original consultar `ANALYSIS_IMAGES.md`. El OpenAPI
+> generado en `/openapi.json` refleja las rutas efectivamente desplegadas.
+
 > **Contrato canónico del backend.** Otras copias del repositorio (p. ej.
 > `context/Diseño Back/Nerilum_API_Contract.md`) son copias de referencia:
 > edítalas solo cuando cambie este documento.

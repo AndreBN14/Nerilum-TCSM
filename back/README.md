@@ -82,12 +82,16 @@ permiso para crear y eliminar esos esquemas. Sin esa variable se omiten las prue
 | GET | `/api/v1/analyses/{id}` | Bearer | Detalle de un análisis propio. |
 | POST | `/api/v1/analyses/preview` | Bearer | Inferencia sin insertar en el historial. |
 | POST | `/api/v1/analyses/save` | Bearer | Guarda un resultado previsualizado y firmado. |
+| POST | `/api/v1/analyses/save-with-image` | Bearer | Guarda resultado e imagen original tras confirmación. |
+| GET | `/api/v1/analyses/{id}/image` | Bearer | Descarga el original de un análisis propio. |
 
 El flujo explícito `preview → save` se documenta en
 [`ANALYSIS_SAVE_V2.md`](ANALYSIS_SAVE_V2.md). El POST existente que infiere y
 guarda en una operación se mantiene para APK anteriores. Las rutas nuevas
 requieren `ANALYSIS_PROOF_SECRET` en Render; si falta, responden 503 sin afectar
 el flujo antiguo. No se requieren migraciones SQL adicionales para este cambio.
+La ampliación que conserva la imagen original se documenta en
+[`ANALYSIS_IMAGES.md`](ANALYSIS_IMAGES.md) y requiere `005_analysis_images.sql`.
 
 `POST /api/v1/analyses` es multipart: `file` (JPG/JPEG o PNG, máx. 10 MB) y un
 opcional `display_name` (se recorta; vacío queda en `null`; ≤120 caracteres ya
@@ -209,13 +213,15 @@ threadpool para mantener disponible el event loop durante las operaciones síncr
   Aplicar también `migrations/004_analysis_idempotency.sql` para añadir las columnas
   internas y la restricción única a tablas anteriores. Es aditiva y no elimina
   resultados. El backend exige ese esquema antes de aceptar solicitudes.
-  SQLite añade automáticamente estas columnas e índice en una transacción local.
+   SQLite añade automáticamente estas columnas e índice en una transacción local.
+   Para habilitar originales aplicar `migrations/005_analysis_images.sql` antes de
+   configurar la clave de Storage en Render; las filas anteriores permanecen sin imagen.
   Copias de los scripts: `infraestructura/BD/supabase/` desde la raíz del repo.
   En Supabase se aplicó únicamente `004_analysis_idempotency.sql` con autorización
   expresa; no se aplicaron las migraciones `001`–`003`.
 
 - **SQLite** local en `data/nerilum.db` (tabla `analyses`, índice por
-  `account_id` + `created_at DESC`). No se almacenan imágenes. El historial
+  `account_id` + `created_at DESC`). El historial
   ordena por `created_at DESC, id DESC`; las filas antiguas con microsegundos se
   normalizan a segundos al leerlas.
 - El artefacto ONNX no se versiona: se publica como asset del GitHub Release.
@@ -292,6 +298,8 @@ proceso tienen prioridad.
 | `SEED_DEMO` | `false` | Activa registros demo (solo desarrollo). |
 | `SEED_DEMO_ACCOUNT_ID` | vacío | UUID del usuario que recibe los registros demo. |
 | `ANALYSIS_PROOF_SECRET` | vacío | Secreto del backend (mínimo 32 caracteres) para firmar previsualizaciones; no se comparte con Flutter. |
+| `SUPABASE_SERVICE_ROLE_KEY` | vacío | Credencial privada de Storage; solo en Render, habilita asociación del original con el análisis. |
+| `ANALYSIS_IMAGES_BUCKET` | `analysis-images` | Bucket privado de originales. |
 
 No guardar claves privilegiadas ni contraseñas en el repositorio. Flutter móvil
 no depende de CORS; la configuración del backend no activa Supabase en Flutter.
