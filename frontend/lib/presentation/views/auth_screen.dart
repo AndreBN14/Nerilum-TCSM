@@ -34,19 +34,11 @@ class _AuthScreenState extends State<AuthScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_viewModel == null) {
-      _viewModel = AppScope.of(context).createAuthViewModel();
-      _viewModel!.addListener(_onAuthChanged);
-    }
-  }
-
-  void _onAuthChanged() {
-    if (mounted) setState(() {});
+    _viewModel ??= AppScope.of(context).createAuthViewModel();
   }
 
   @override
   void dispose() {
-    _viewModel?.removeListener(_onAuthChanged);
     _viewModel?.dispose();
     _name.dispose();
     _email.dispose();
@@ -61,47 +53,47 @@ class _AuthScreenState extends State<AuthScreen> {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
-  Future<void> _submit() async {
-    if (_viewModel!.busy) return;
+  Future<void> _submit(AuthViewModel vm) async {
+    if (vm.busy) return;
     setState(() => _submitted = true);
     if (!_formKey.currentState!.validate()) return;
     if (_registering) {
-      if (_viewModel!.isDemo && !_acceptedDemo) {
+      if (vm.isDemo && !_acceptedDemo) {
         _message('Acepta continuar en modo demostración.');
         return;
       }
-      final created = await _viewModel!.register(
+      final created = await vm.register(
         _email.text,
         _password.text,
         _name.text,
       );
       if (!mounted) return;
       if (created) {
-        if (_viewModel!.requiresEmailConfirmation) {
+        if (vm.requiresEmailConfirmation) {
           setState(() => _confirmationSent = true);
         } else {
           Navigator.of(context).pushReplacementNamed('/login');
         }
-      } else if (_viewModel!.error != null) {
-        _message(_viewModel!.error!);
+      } else if (vm.error != null) {
+        _message(vm.error!);
       }
       return;
     }
-    final loggedIn = await _viewModel!.login(_email.text, _password.text);
+    final loggedIn = await vm.login(_email.text, _password.text);
     if (!mounted) return;
     if (loggedIn) {
-      if (_viewModel!.isDemo) {
+      if (vm.isDemo) {
         AppScope.of(context).mainViewModel.refreshHistory();
         Navigator.of(context).pushNamedAndRemoveUntil('/app', (_) => false);
       }
       // En modo Supabase, el listener global de onAuthStateChange realiza
       // restauración del historial y navegación una sola vez.
-    } else if (_viewModel!.error != null) {
-      _message(_viewModel!.error!);
+    } else if (vm.error != null) {
+      _message(vm.error!);
     }
   }
 
-  Widget _passwordField({bool confirmation = false}) {
+  Widget _passwordField({bool confirmation = false, required AuthViewModel vm}) {
     final obscure = confirmation ? _obscureConfirmation : _obscurePassword;
     return TextFormField(
       controller: confirmation ? _confirmation : _password,
@@ -111,7 +103,7 @@ class _AuthScreenState extends State<AuthScreen> {
           ? TextInputAction.done
           : (_registering ? TextInputAction.next : TextInputAction.done),
       onFieldSubmitted: (_) {
-        if (confirmation || !_registering) _submit();
+        if (confirmation || !_registering) _submit(vm);
       },
       decoration: InputDecoration(
         labelText: confirmation ? 'Confirmar contraseña' : 'Contraseña',
@@ -145,6 +137,17 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_viewModel == null) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
+    final vm = _viewModel!;
+    return AnimatedBuilder(
+      animation: vm,
+      builder: (context, _) => _buildContent(context, vm),
+    );
+  }
+
+  Widget _buildContent(BuildContext context, AuthViewModel vm) {
     final colors = NerilumPalette.of(context);
     if (_confirmationSent) {
       return Scaffold(
@@ -176,17 +179,15 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: const Text('Ir a iniciar sesión'),
                     ),
                     TextButton(
-                      onPressed: _viewModel!.busy
+                      onPressed: vm.busy
                           ? null
                           : () async {
-                              final sent = await _viewModel!.resend(
-                                _email.text,
-                              );
+                              final sent = await vm.resend(_email.text);
                               if (!mounted) return;
                               _message(
                                 sent
                                     ? 'Solicitud de reenvío enviada. Revisa tu correo.'
-                                    : _viewModel!.error!,
+                                    : vm.error!,
                               );
                             },
                       child: const Text('Reenviar confirmación'),
@@ -283,12 +284,12 @@ class _AuthScreenState extends State<AuthScreen> {
                         },
                       ),
                       const SizedBox(height: 12),
-                      _passwordField(),
+                      _passwordField(vm: vm),
                       if (_registering) ...[
                         const SizedBox(height: 12),
-                        _passwordField(confirmation: true),
+                        _passwordField(confirmation: true, vm: vm),
                         const SizedBox(height: 12),
-                        if (_viewModel!.isDemo)
+                        if (vm.isDemo)
                           CheckboxListTile(
                             value: _acceptedDemo,
                             onChanged: (value) =>
@@ -315,7 +316,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       ],
                       const SizedBox(height: 22),
                       ElevatedButton(
-                        onPressed: _viewModel!.busy ? null : _submit,
+                        onPressed: vm.busy ? null : () => _submit(vm),
                         child: Row(
                           children: [
                             Expanded(
@@ -329,7 +330,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           ],
                         ),
                       ),
-                      if (!_registering && _viewModel!.isDemo) ...[
+                      if (!_registering && vm.isDemo) ...[
                         const SizedBox(height: 14),
                         Text(
                           'Demo: demo@nerilum.app / Demo1234',

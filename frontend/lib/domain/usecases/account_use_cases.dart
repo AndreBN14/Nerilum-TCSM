@@ -33,3 +33,12 @@ class ResendConfirmation {
   Future<void> call(String email) =>
       repository.resendConfirmation(email.trim());
 }
+
+/// Expone las capacidades de autenticación del repositorio sin que el
+/// ViewModel deba conocer la implementación concreta.
+class GetAuthCapabilities {
+  const GetAuthCapabilities(this.repository);
+  final AccountRepository repository;
+  bool get isDemo => repository.isDemo;
+  bool get requiresEmailConfirmation => repository.requiresEmailConfirmation;
+}

@@ -9,9 +9,9 @@ import '../../domain/models/history_sort.dart';
 import '../../domain/models/pending_analysis.dart';
 import '../../domain/repositories/analysis_repository.dart';
 import '../../domain/repositories/image_repository.dart';
-import '../../domain/repositories/pending_analysis_repository.dart';
 import '../../domain/usecases/account_use_cases.dart';
 import '../../domain/usecases/analysis_use_cases.dart';
+import '../../domain/usecases/pending_use_cases.dart';
 import '../../domain/usecases/preview_use_cases.dart';
 import '../../domain/usecases/image_use_cases.dart';
 import '../../domain/usecases/history_sort_use_cases.dart';
@@ -29,8 +29,17 @@ class MainViewModel extends ChangeNotifier {
     required this.currentAccount,
     required this.logoutAccount,
     this.onLogout,
-    this.pendingRepository,
     this.lookupAnalysis,
+    // UseCases de pendientes — todos opcionales para conservar compatibilidad
+    // con modos sin cola (mock sin Android, web).
+    this.listPending,
+    this.enqueuePending,
+    this.findPending,
+    this.getPendingImage,
+    this.discardPending,
+    this.beginPendingSave,
+    this.completePendingSave,
+    this.releaseExpiredPendingSave,
   });
 
   final SelectImage selectImage;
@@ -44,8 +53,27 @@ class MainViewModel extends ChangeNotifier {
   final CurrentAccount currentAccount;
   final LogoutAccount logoutAccount;
   final VoidCallback? onLogout;
-  final PendingAnalysisRepository? pendingRepository;
   final AnalysisLookupRepository? lookupAnalysis;
+
+  // UseCases de análisis pendientes.
+  final ListPending? listPending;
+  final EnqueuePending? enqueuePending;
+  final FindPending? findPending;
+  final GetPendingImage? getPendingImage;
+  final DiscardPending? discardPending;
+  final BeginPendingSave? beginPendingSave;
+  final CompletePendingSave? completePendingSave;
+  final ReleaseExpiredPendingSave? releaseExpiredPendingSave;
+
+  bool get _hasPendingSupport =>
+      listPending != null &&
+      enqueuePending != null &&
+      findPending != null &&
+      getPendingImage != null &&
+      discardPending != null &&
+      beginPendingSave != null &&
+      completePendingSave != null &&
+      releaseExpiredPendingSave != null;
 
   int tab = 0;
   SelectedImage? image;
@@ -210,7 +238,7 @@ class MainViewModel extends ChangeNotifier {
       error = failure.message;
     } on AnalysisNetworkFailure {
       if (_disposed || session != _sessionVersion) return;
-      canQueueImage = pendingRepository != null;
+      canQueueImage = _hasPendingSupport;
       error = canQueueImage
           ? 'No se pudo completar la conexión. Inténtalo más tarde o guarda la imagen como pendiente.'
           : 'No se pudo completar la conexión. Inténtalo más tarde.';
@@ -230,10 +258,10 @@ class MainViewModel extends ChangeNotifier {
 
   Future<void> loadPending() async {
     final owner = account?.id;
-    if (pendingRepository == null || owner == null) return;
+    if (listPending == null || owner == null) return;
     final session = _sessionVersion;
     try {
-      final records = await pendingRepository!.list(owner);
+      final records = await listPending!(owner);
       if (_disposed || session != _sessionVersion || account?.id != owner) {
         return;
       }
@@ -250,7 +278,7 @@ class MainViewModel extends ChangeNotifier {
     final owner = account?.id;
     final selected = image;
     if (!canQueueImage ||
-        pendingRepository == null ||
+        enqueuePending == null ||
         owner == null ||
         selected == null ||
         processing ||
@@ -261,7 +289,7 @@ class MainViewModel extends ChangeNotifier {
     final session = _sessionVersion;
     _enqueuing = true;
     try {
-      await pendingRepository!.enqueue(owner, selected);
+      await enqueuePending!(owner, selected);
       if (_disposed || session != _sessionVersion || account?.id != owner) {
         return false;
       }
@@ -270,7 +298,8 @@ class MainViewModel extends ChangeNotifier {
       return true;
     } catch (_) {
       if (_disposed || session != _sessionVersion) return false;
-      pendingError = 'No se pudo guardar el pendiente cifrado. Comprueba el espacio disponible.';
+      pendingError =
+          'No se pudo guardar el pendiente cifrado. Comprueba el espacio disponible.';
       notifyListeners();
       return false;
     } finally {
@@ -278,11 +307,11 @@ class MainViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> discardPending(String id) async {
+  Future<void> discardPendingById(String id) async {
     final owner = account?.id;
-    if (owner == null || pendingRepository == null) return;
+    if (owner == null || discardPending == null) return;
     try {
-      await pendingRepository!.discard(owner, id);
+      await discardPending!(owner, id);
       await loadPending();
     } catch (_) {
       pendingError = 'No se pudo descartar el pendiente.';
@@ -292,7 +321,7 @@ class MainViewModel extends ChangeNotifier {
 
   Future<bool> previewPending(String id) async {
     final owner = account?.id;
-    if (pendingRepository == null ||
+    if (!_hasPendingSupport ||
         previewImage == null ||
         owner == null ||
         processing ||
@@ -306,9 +335,9 @@ class MainViewModel extends ChangeNotifier {
     pendingError = null;
     notifyListeners();
     try {
-      final item = await pendingRepository!.find(owner, id);
+      final item = await findPending!(owner, id);
       if (item == null || item.status != 'pending') return false;
-      final selected = await pendingRepository!.image(owner, id);
+      final selected = await getPendingImage!(owner, id);
       final prepared = await previewImage!(selected);
       if (_disposed || session != _sessionVersion || account?.id != owner) {
         return false;
@@ -328,7 +357,8 @@ class MainViewModel extends ChangeNotifier {
       return false;
     } catch (_) {
       if (!_disposed && session == _sessionVersion) {
-        pendingError = 'No se pudo previsualizar el pendiente. Sigue guardado en el dispositivo.';
+        pendingError =
+            'No se pudo previsualizar el pendiente. Sigue guardado en el dispositivo.';
       }
       return false;
     } finally {
@@ -342,13 +372,13 @@ class MainViewModel extends ChangeNotifier {
   Future<AnalysisResult?> resumePendingSave(String id) async {
     final owner = account?.id;
     if (owner == null ||
-        pendingRepository == null ||
+        !_hasPendingSupport ||
         lookupAnalysis == null ||
         !_recoveringIds.add(id)) {
       return null;
     }
     try {
-      final item = await pendingRepository!.find(owner, id);
+      final item = await findPending!(owner, id);
       if (item == null ||
           item.status != 'saving' ||
           item.previewId == null ||
@@ -358,7 +388,7 @@ class MainViewModel extends ChangeNotifier {
       }
       final found = await lookupAnalysis!.findById(item.previewId!);
       if (found != null) {
-        await pendingRepository!.complete(owner, id);
+        await completePendingSave!(owner, id);
         await loadPending();
         await refreshHistory();
         return found;
@@ -366,9 +396,10 @@ class MainViewModel extends ChangeNotifier {
       if (account?.id != owner) return null;
       if (item.proofExpiresAt == null ||
           DateTime.now().toUtc().isAfter(item.proofExpiresAt!)) {
-        await pendingRepository!.releaseExpiredSave(owner, id);
+        await releaseExpiredPendingSave!(owner, id);
         await loadPending();
-        pendingError = 'El comprobante expiró. Vuelve a ver el resultado antes de guardarlo.';
+        pendingError =
+            'El comprobante expiró. Vuelve a ver el resultado antes de guardarlo.';
         notifyListeners();
         return null;
       }
@@ -387,7 +418,7 @@ class MainViewModel extends ChangeNotifier {
         prepared,
         displayName: item.displayName,
       );
-      await pendingRepository!.complete(owner, id);
+      await completePendingSave!(owner, id);
       await loadPending();
       await refreshHistory();
       return saved;
@@ -410,9 +441,9 @@ class MainViewModel extends ChangeNotifier {
       final localId = activePendingId;
       if (localId != null &&
           owner != null &&
-          pendingRepository != null &&
+          _hasPendingSupport &&
           !_saveCommitted) {
-        await pendingRepository!.beginSave(
+        await beginPendingSave!(
           owner,
           localId,
           previewId: preview!.result.id!,
@@ -447,7 +478,8 @@ class MainViewModel extends ChangeNotifier {
       error = failure.message;
     } catch (_) {
       if (_disposed || session != _sessionVersion) return;
-      error = 'No se pudo guardar. Comprueba el historial antes de reintentar.';
+      error =
+          'No se pudo guardar. Comprueba el historial antes de reintentar.';
     } finally {
       if (!_disposed && session == _sessionVersion) {
         saving = false;
@@ -456,8 +488,18 @@ class MainViewModel extends ChangeNotifier {
     }
   }
 
-  void discardPreview() {
-    if (saving || processing) return;
+  /// Comprueba si el preview activo sigue siendo válido y, si expiró,
+  /// descarta el preview y reintenta obtenerlo desde el pendiente local.
+  /// Retorna true si el preview es válido (o fue renovado) y false si falló.
+  Future<bool> ensurePreviewValid(String localId) async {
+    if (preview == null || activePendingId != localId) return false;
+    if (!DateTime.now().toUtc().isAfter(preview!.expiresAt)) return true;
+    // El preview expiró: descartar y reintentar.
+    discardPreview();
+    return previewPending(localId);
+  }
+
+  void discardPreview() {    if (saving || processing) return;
     preview = null;
     if (activePendingId != null) image = null;
     activePendingId = null;
