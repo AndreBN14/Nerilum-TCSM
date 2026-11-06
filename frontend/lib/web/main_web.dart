@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app/api_configuration.dart';
 import '../core/theme/nerilum_theme.dart';
+import '../data/datasources/http_analysis_data_source.dart';
+import '../domain/repositories/analysis_repository.dart';
 import 'screens/web_login_screen.dart';
-import 'screens/web_home_screen.dart';
+import 'web_portal_shell.dart';
 
 /// Entry point para la app web de prueba.
 /// Ejecutar con:
@@ -23,26 +26,94 @@ Future<void> main() async {
 
   await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseKey);
 
-  runApp(const NerilumWebApp());
+  // El portal consume el backend de análisis si se define API_BASE_URL.
+  // Sin él, las vistas que necesitan análisis muestran que el backend no está
+  // configurado en lugar de fingir datos.
+  const apiConfig = ApiConfiguration();
+  HttpAnalysisDataSource? analysisSource;
+  if (apiConfig.enabled) {
+    try {
+      final client = Supabase.instance.client;
+      analysisSource = HttpAnalysisDataSource(
+        baseUri: apiConfig.baseUri,
+        accessToken: () async {
+          try {
+            var session = client.auth.currentSession;
+            if (session != null && session.isExpired) {
+              session = (await client.auth.refreshSession()).session;
+            }
+            return session?.accessToken;
+          } on AuthRetryableFetchException {
+            throw const AnalysisNetworkFailure(
+              'Sin conexión para verificar la sesión.',
+            );
+          }
+        },
+      );
+    } catch (_) {
+      // API_BASE_URL inválida: el portal sigue funcionando sin análisis.
+      analysisSource = null;
+    }
+  }
+
+  runApp(NerilumWebApp(analysisSource: analysisSource));
+}
+
+/// Tema web: extiende el tema oscuro de Nerilum con las superficies del
+/// navegador que Flutter web todavía deja con valores por defecto: la barra
+/// de desplazamiento y el color de selección de texto. Tematizarlas desde la
+/// paleta es la señal más barata de que la página fue construida, no ensamblada.
+ThemeData get _webTheme {
+  final base = NerilumTheme.dark;
+  return base.copyWith(
+    scrollbarTheme: ScrollbarThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.dragged)) {
+          return NerilumColors.mintSecondary;
+        }
+        if (states.contains(WidgetState.hovered)) {
+          return NerilumColors.border.withValues(alpha: 0.9);
+        }
+        return NerilumColors.border.withValues(alpha: 0.55);
+      }),
+      trackColor: WidgetStateProperty.all(
+        NerilumColors.surface.withValues(alpha: 0.4),
+      ),
+      radius: const Radius.circular(8),
+      thickness: const WidgetStatePropertyAll(10),
+      crossAxisMargin: 2,
+      mainAxisMargin: 4,
+    ),
+    textSelectionTheme: TextSelectionThemeData(
+      selectionColor: NerilumColors.mint.withValues(alpha: 0.28),
+      cursorColor: NerilumColors.mint,
+      selectionHandleColor: NerilumColors.mintSecondary,
+    ),
+    splashFactory: InkSparkle.splashFactory,
+  );
 }
 
 class NerilumWebApp extends StatelessWidget {
-  const NerilumWebApp({super.key});
+  const NerilumWebApp({super.key, this.analysisSource});
+
+  final HttpAnalysisDataSource? analysisSource;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Nerilum — Web',
       debugShowCheckedModeBanner: false,
-      theme: NerilumTheme.dark,
-      home: const _AuthGate(),
+      theme: _webTheme,
+      home: _AuthGate(analysisSource: analysisSource),
     );
   }
 }
 
 /// Decide si mostrar login o home según la sesión activa.
 class _AuthGate extends StatelessWidget {
-  const _AuthGate();
+  const _AuthGate({this.analysisSource});
+
+  final HttpAnalysisDataSource? analysisSource;
 
   @override
   Widget build(BuildContext context) {
@@ -61,13 +132,21 @@ class _AuthGate extends StatelessWidget {
               event == AuthChangeEvent.tokenRefreshed ||
               event == AuthChangeEvent.initialSession) {
             final user = snapshot.data!.session?.user;
-            if (user != null) return WebHomeScreen(user: user);
+            if (user != null) {
+              return WebPortalShell(
+                user: user,
+                analysisSource: analysisSource,
+              );
+            }
           }
         }
 
         // Sin evento aún: usar sesión persistida localmente.
         if (session != null) {
-          return WebHomeScreen(user: session.user);
+          return WebPortalShell(
+            user: session.user,
+            analysisSource: analysisSource,
+          );
         }
 
         return const WebLoginScreen();
@@ -86,7 +165,7 @@ class _MissingConfigApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: NerilumTheme.dark,
+      theme: _webTheme,
       home: Scaffold(
         body: Center(
           child: Padding(

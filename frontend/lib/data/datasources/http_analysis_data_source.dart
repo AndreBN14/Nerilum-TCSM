@@ -213,5 +213,46 @@ class HttpAnalysisDataSource {
     return List.unmodifiable(records.values);
   }
 
+  /// Una sola página del historial con el `total` que reporta el backend.
+  ///
+  /// A diferencia de [history], no recorre todas las páginas: devuelve la
+  /// página solicitada y el total, pensado para paginar en la UI. `sort` debe
+  /// coincidir con los valores del backend: `newest`, `oldest`, `nameAZ` o
+  /// `probability`.
+  Future<({List<AnalysisResult> items, int total})> listAnalyses({
+    int limit = 50,
+    int offset = 0,
+    String sort = 'newest',
+  }) async {
+    final uri = baseUri.resolve('analyses').replace(
+      queryParameters: {
+        'limit': '$limit',
+        'offset': '$offset',
+        'sort': sort,
+      },
+    );
+    final json = await _send(http.Request('GET', uri));
+    try {
+      final items = json['items'];
+      final total = json['total'];
+      if (items is! List || total is! int || total < 0) {
+        throw const FormatException();
+      }
+      final results = <AnalysisResult>[];
+      for (final item in items) {
+        if (item is! Map<String, dynamic>) throw const FormatException();
+        results.add(AnalysisResultDto.fromJson(item));
+      }
+      return (
+        items: List<AnalysisResult>.unmodifiable(results),
+        total: total,
+      );
+    } on FormatException {
+      throw const AnalysisFailure(
+        'El backend devolvió un historial no válido.',
+      );
+    }
+  }
+
   void close() => _client.close();
 }
