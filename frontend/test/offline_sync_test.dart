@@ -27,6 +27,7 @@ class _Remote
     implements AnalysisRepository, PreviewRepository, AnalysisLookupRepository {
   bool disconnected = true;
   bool dropFirstSaveResponse = false;
+  bool failBeforeFirstSave = false;
   int previewCalls = 0;
   int saveCalls = 0;
   AnalysisResult? stored;
@@ -50,10 +51,16 @@ class _Remote
 
   @override
   Future<AnalysisResult> save(
-    AnalysisPreview preview, {
+    AnalysisPreview preview,
+    SelectedImage image, {
     String? displayName,
   }) async {
     saveCalls++;
+    expect(image.bytes, orderedEquals([1, 2, 3]));
+    if (failBeforeFirstSave) {
+      failBeforeFirstSave = false;
+      throw const AnalysisNetworkFailure('Subida interrumpida');
+    }
     stored ??= AnalysisResult(
       id: preview.result.id,
       category: 'NonDemented',
@@ -189,6 +196,58 @@ void main() {
     expect(remote.saveCalls, 1);
     expect(await queue.list(pending.ownerId), isEmpty);
   });
+
+  test(
+    'Tras reiniciar reenvía el original cifrado si la primera subida falló',
+    () async {
+      final dir = await Directory.systemTemp.createTemp('nerilum_image_retry_');
+      final queue = EncryptedPendingAnalysisRepository(
+        rootOverride: dir,
+        testKey: List<int>.filled(32, 8),
+        testDatabaseOpener: (path, password, create) =>
+            databaseFactoryFfi.openDatabase(
+              path,
+              options: OpenDatabaseOptions(version: 1, onCreate: create),
+            ),
+      );
+      addTearDown(() async {
+        await queue.close();
+        await dir.delete(recursive: true);
+      });
+      final remote = _Remote();
+      final first = AppDependencies(
+        images: _Image(),
+        analysis: remote,
+        pendingAnalyses: queue,
+      );
+      await first.accountRepository.login('demo@nerilum.app', 'Demo1234');
+      final model = first.mainViewModel;
+      await model.pickImage();
+      await model.analyze();
+      expect(await model.enqueueSelected(), isTrue);
+      final pending = model.pendingAnalyses.single;
+      remote.disconnected = false;
+      expect(await model.previewPending(pending.id), isTrue);
+      remote.failBeforeFirstSave = true;
+      await model.savePreview();
+      expect(remote.stored, isNull);
+      expect((await queue.find(pending.ownerId, pending.id))!.status, 'saving');
+      first.dispose();
+
+      final reopened = AppDependencies(
+        analysis: remote,
+        pendingAnalyses: queue,
+      );
+      addTearDown(reopened.dispose);
+      await reopened.restoreLocalState();
+      expect(
+        (await reopened.mainViewModel.resumePendingSave(pending.id))?.id,
+        'an_123abc',
+      );
+      expect(remote.saveCalls, 2);
+      expect(await queue.list(pending.ownerId), isEmpty);
+    },
+  );
 
   test(
     'Comprobante caducado sin registro remoto vuelve a pendiente sin guardar',

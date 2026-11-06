@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:frontend/data/datasources/http_analysis_data_source.dart';
+import 'package:frontend/domain/models/analysis_preview.dart';
+import 'package:frontend/domain/models/analysis_result.dart';
 import 'package:frontend/domain/models/selected_image.dart';
 import 'package:frontend/domain/repositories/analysis_repository.dart';
 
@@ -184,10 +186,12 @@ void main() {
           );
         }
         expect(request.method, 'POST');
-        expect(jsonDecode(request.body), {
-          'save_proof': 'signed-test-proof',
-          'display_name': 'Control',
-        });
+        expect(request.url.path, '/api/v1/analyses/save-with-image');
+        expect(request.body, contains('name="save_proof"'));
+        expect(request.body, contains('signed-test-proof'));
+        expect(request.body, contains('name="display_name"'));
+        expect(request.body, contains('Control'));
+        expect(request.body, contains('name="file"; filename="mri.png"'));
         return http.Response(
           jsonEncode({..._result('an_123'), 'display_name': 'Control'}),
           201,
@@ -198,10 +202,17 @@ void main() {
       addTearDown(source.close);
       final preview = await source.preview(_image());
       expect(preview.result.category, 'NonDemented');
-      final saved = await source.savePreview(preview, displayName: ' Control ');
+      final saved = await source.savePreview(
+        preview,
+        _image(),
+        displayName: ' Control ',
+      );
       expect(saved.id, preview.result.id);
       expect(saved.displayName, 'Control');
-      expect(paths, ['/api/v1/analyses/preview', '/api/v1/analyses/save']);
+      expect(paths, [
+        '/api/v1/analyses/preview',
+        '/api/v1/analyses/save-with-image',
+      ]);
     },
   );
 
@@ -217,6 +228,80 @@ void main() {
     await expectLater(network.history(), throwsA(isA<AnalysisFailure>()));
     await expectLater(invalid.history(), throwsA(isA<AnalysisFailure>()));
   });
+
+  test(
+    'Recupera la imagen privada solo con JWT y valida el contenido',
+    () async {
+      final image = Uint8List.fromList([
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        13,
+        10,
+        26,
+        10,
+        1,
+      ]);
+      final source = _source(
+        MockClient((request) async {
+          expect(request.url.path, '/api/v1/analyses/an_123abc/image');
+          expect(request.headers['Authorization'], 'Bearer test-access-token');
+          return http.Response.bytes(
+            image,
+            200,
+            headers: {'content-type': 'image/png'},
+          );
+        }),
+      );
+      addTearDown(source.close);
+      expect(await source.loadImage('an_123abc'), image);
+    },
+  );
+
+  test('No trata una respuesta JSON como imagen', () async {
+    final source = _source(
+      MockClient(
+        (_) async => http.Response(
+          '{}',
+          200,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
+    );
+    addTearDown(source.close);
+    await expectLater(
+      source.loadImage('an_123abc'),
+      throwsA(isA<AnalysisFailure>()),
+    );
+  });
+
+  test(
+    'Un 503 al guardar explica que la imagen no se pudo conservar',
+    () async {
+      final source = _source(MockClient((_) async => http.Response('{}', 503)));
+      addTearDown(source.close);
+      final preview = AnalysisPreview(
+        result: AnalysisResult(
+          id: 'an_abc123',
+          category: 'NonDemented',
+          createdAt: DateTime.utc(2026),
+        ),
+        saveProof: 'proof',
+        expiresAt: DateTime.utc(2026),
+      );
+      await expectLater(
+        source.savePreview(preview, _image()),
+        throwsA(
+          isA<AnalysisUnavailable>().having(
+            (failure) => failure.message,
+            'mensaje',
+            contains('imagen'),
+          ),
+        ),
+      );
+    },
+  );
 
   test('Timeout informa que se puede reintentar', () async {
     final pending = Completer<http.Response>();

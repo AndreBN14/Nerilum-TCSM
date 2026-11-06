@@ -54,7 +54,8 @@ class _Remote implements AnalysisRepository, PreviewRepository {
 
   @override
   Future<AnalysisResult> save(
-    AnalysisPreview preview, {
+    AnalysisPreview preview,
+    SelectedImage image, {
     String? displayName,
   }) async => throw StateError('No debe guardarse automáticamente');
 

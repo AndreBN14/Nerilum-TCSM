@@ -1,12 +1,19 @@
+import 'dart:typed_data';
+
 import '../../domain/models/analysis_result.dart';
 import '../../domain/models/selected_image.dart';
 import '../../domain/repositories/analysis_repository.dart';
 import '../../domain/repositories/preview_repository.dart';
+import '../../domain/repositories/analysis_image_repository.dart';
 import '../../domain/models/analysis_preview.dart';
 import '../datasources/http_analysis_data_source.dart';
 
 class HttpAnalysisRepository
-    implements AnalysisRepository, PreviewRepository, AnalysisLookupRepository {
+    implements
+        AnalysisRepository,
+        PreviewRepository,
+        AnalysisLookupRepository,
+        AnalysisImageRepository {
   const HttpAnalysisRepository(this.source);
   final HttpAnalysisDataSource source;
 
@@ -28,8 +35,14 @@ class HttpAnalysisRepository
   Future<AnalysisPreview> preview(SelectedImage image) => source.preview(image);
 
   @override
-  Future<AnalysisResult> save(AnalysisPreview preview, {String? displayName}) =>
-      source.savePreview(preview, displayName: displayName);
+  Future<AnalysisResult> save(
+    AnalysisPreview preview,
+    SelectedImage image, {
+    String? displayName,
+  }) => source.savePreview(preview, image, displayName: displayName);
+
+  @override
+  Future<Uint8List> loadImage(String id) => source.loadImage(id);
 
   @override
   Future<AnalysisResult?> findById(String id) => source.findById(id);

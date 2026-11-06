@@ -13,6 +13,9 @@ class PreviewImage {
 class SaveAnalysis {
   const SaveAnalysis(this.repository);
   final PreviewRepository repository;
-  Future<AnalysisResult> call(AnalysisPreview preview, {String? displayName}) =>
-      repository.save(preview, displayName: displayName);
+  Future<AnalysisResult> call(
+    AnalysisPreview preview,
+    SelectedImage image, {
+    String? displayName,
+  }) => repository.save(preview, image, displayName: displayName);
 }

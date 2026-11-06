@@ -4,5 +4,9 @@ import '../models/selected_image.dart';
 
 abstract class PreviewRepository {
   Future<AnalysisPreview> preview(SelectedImage image);
-  Future<AnalysisResult> save(AnalysisPreview preview, {String? displayName});
+  Future<AnalysisResult> save(
+    AnalysisPreview preview,
+    SelectedImage image, {
+    String? displayName,
+  });
 }

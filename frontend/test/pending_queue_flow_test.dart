@@ -28,7 +28,8 @@ class _OfflineAnalysis implements AnalysisRepository, PreviewRepository {
       throw const AnalysisNetworkFailure('Sin conexión');
   @override
   Future<AnalysisResult> save(
-    AnalysisPreview preview, {
+    AnalysisPreview preview,
+    SelectedImage image, {
     String? displayName,
   }) async => throw StateError('No guardar sin confirmación');
   @override
