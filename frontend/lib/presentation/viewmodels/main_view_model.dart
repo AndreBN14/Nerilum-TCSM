@@ -414,7 +414,7 @@ class MainViewModel extends ChangeNotifier {
         saveProof: item.saveProof!,
         expiresAt: item.proofExpiresAt!,
       );
-      final selected = await pendingRepository!.image(owner, id);
+      final selected = await getPendingImage!(owner, id);
       final saved = await saveAnalysis!(
         prepared,
         selected,
