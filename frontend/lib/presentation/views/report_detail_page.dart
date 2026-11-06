@@ -63,6 +63,9 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
       imageBytes: _report!.imageBytes,
       imageLoading: _report!.imageLoading,
       imageError: _report!.imageError,
+      onRetryImage: _report!.imageError != null
+          ? () => _report!.loadRecordImage(widget.result)
+          : null,
       onBack: () => Navigator.of(context).pop(),
       onExport: () => _export(),
       onShare: () => _export(share: true),

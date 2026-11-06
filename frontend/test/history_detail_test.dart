@@ -110,7 +110,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Detalle del análisis'), findsOneWidget);
     expect(find.text('Puntuación del modelo: 72,00 %'), findsOneWidget);
-    expect(find.byIcon(Icons.insert_drive_file_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.hide_image_outlined), findsOneWidget);
     await tester.dragUntilVisible(
       find.text('Modelo: yolov8n-cls · v0.1'),
       find.byType(ListView).last,
