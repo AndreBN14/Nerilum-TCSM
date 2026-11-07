@@ -1,6 +1,13 @@
 {
-  "name": "yolov8n-cls",
-  "version": "v0.1",
+  "name": "yolov5-cls",
+  "version": "v1.0",
   "dataset": "Alzheimer MRI Dataset (Kaggle)",
-  "trained_at": "2026-10-11"
+  "task": "classify",
+  "classes": [
+    "NonDemented",
+    "VeryMildDemented",
+    "MildDemented",
+    "ModerateDemented"
+  ],
+  "trained_at": "2026-11-06"
 }
