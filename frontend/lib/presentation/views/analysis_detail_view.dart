@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../domain/models/analysis_result.dart';
 import '../../domain/models/selected_image.dart';
 import '../../core/theme/nerilum_theme.dart';
+import '../../core/utils/category_label.dart';
 import '../../core/utils/score_text.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/class_scores.dart';
@@ -526,7 +527,7 @@ class _ResultCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            result.category,
+            categoryLabel(result.category),
             style: TextStyle(
               color: colors.mint,
               fontSize: 24,

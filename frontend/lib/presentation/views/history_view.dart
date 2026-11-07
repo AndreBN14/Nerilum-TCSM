@@ -4,6 +4,7 @@ import '../../domain/models/analysis_result.dart';
 import '../../domain/models/history_sort.dart';
 import '../../domain/models/pending_analysis.dart';
 import '../../core/theme/nerilum_theme.dart';
+import '../../core/utils/category_label.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/history_sort_control.dart';
 import '../widgets/history_status.dart';
@@ -124,7 +125,10 @@ class _HistoryViewState extends State<HistoryView> {
                           child: Text('Todas las clases'),
                         ),
                         for (final category in _classes)
-                          PopupMenuItem(value: category, child: Text(category)),
+                          PopupMenuItem(
+                            value: category,
+                            child: Text(categoryLabel(category)),
+                          ),
                       ],
                     ),
                   ],
@@ -302,7 +306,7 @@ class _HistoryTile extends StatelessWidget {
                               vertical: 5,
                             ),
                             child: Text(
-                              result.category,
+                              categoryLabel(result.category),
                               style: const TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
