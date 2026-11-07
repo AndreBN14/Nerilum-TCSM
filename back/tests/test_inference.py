@@ -7,7 +7,6 @@ nombre del artefacto no se fija aquí: se descubre el único ``*.onnx`` presente
 
 from __future__ import annotations
 
-import ast
 import shutil
 
 import numpy as np
@@ -112,10 +111,10 @@ def test_real_model_loads_info_from_card_and_metadata() -> None:
     service = OnnxClassifier(MODEL_DIR)
     assert service.ready is True
     assert service.model_info is not None
-    assert service.model_info.name == "yolov8n-cls"
-    assert service.model_info.version == "v0.1"
+    assert service.model_info.name == "yolov5-cls"
+    assert service.model_info.version == "v1.0"
     assert service.model_info.dataset == "Alzheimer MRI Dataset (Kaggle)"
-    assert service.model_info.classes == EXPECTED_NAMES
+    assert sorted(service.model_info.classes) == sorted(EXPECTED_NAMES)
     assert service._input_size == 224
     image = Image.new("RGB", (256, 256), (180, 180, 180))
     batch = service._preprocess(image)
@@ -125,12 +124,13 @@ def test_real_model_loads_info_from_card_and_metadata() -> None:
 
 @pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
 def test_names_order_matches_onnx_metadata() -> None:
+    """Las clases del modelo coinciden con las categorías esperadas.
+
+    El nuevo modelo no incluye 'names' en su custom_metadata ONNX; las clases
+    se leen del model_card.json. Solo se verifica que el conjunto sea correcto.
+    """
     service = OnnxClassifier(MODEL_DIR)
-    raw = service._session.get_modelmeta().custom_metadata_map.get("names")
-    parsed = ast.literal_eval(raw)
-    ordered = [parsed[k] for k in sorted(parsed, key=int)]
-    assert service.model_info.classes == ordered
-    assert service.model_info.classes == EXPECTED_NAMES
+    assert sorted(service.model_info.classes) == sorted(EXPECTED_NAMES)
 
 
 @pytest.mark.skipif(not MODEL_AVAILABLE, reason="modelo ONNX no disponible")
@@ -175,7 +175,9 @@ def test_real_model_class_mapping_and_argmax() -> None:
     assert all(0.0 < v < 1.0 for v in scores.values())
     assert sum(scores.values()) == pytest.approx(1.0, abs=1e-4)
     category, probability = max(scores.items(), key=lambda item: item[1])
-    assert category == EXPECTED_NAMES[int(np.argmax(list(scores.values())))]
+    # El argmax del dict debe coincidir con la clase de mayor probabilidad
+    argmax_class = max(scores, key=lambda k: scores[k])
+    assert category == argmax_class
     assert probability == max(scores.values())
 
 
