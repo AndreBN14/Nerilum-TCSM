@@ -27,9 +27,6 @@ jobs:
     defaults:
       run:
         working-directory: back
-    env:
-      MODEL_TOKEN: ${{ secrets.MODEL_TOKEN }}
-
     steps:
       - uses: actions/checkout@v7
 
@@ -44,10 +41,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
-      - name: Download ONNX model from release
-        if: ${{ env.MODEL_TOKEN != '' }}
+      - name: Download ONNX model
         env:
-          MODEL_URL: https://github.com/AndreBN14/Nerilum-TCSM/releases/download/v1.0.0/nerilum-alzheimer-mri-classifier.onnx
+          MODEL_URL: https://github.com/carlos-cas3/G1-TCSM-APP_MOVIL/raw/refs/heads/main/02_robust_cv_pipeline/Yolo_5_CV/weights/final/best.onnx
         run: python scripts/download_model.py
 
       - name: Run tests
