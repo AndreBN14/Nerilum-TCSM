@@ -186,9 +186,9 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
                     if (preview != null) ...[
                       const SizedBox(height: 20),
 
-                      // ── Imagen con zoom ────────────────────────────
+                      // ── Imágenes con zoom independiente ───────────
                       if (image != null)
-                        _ImagePreviewCard(image: image, colors: colors),
+                        _DualImagePreviewCard(image: image, colors: colors),
 
                       const SizedBox(height: 16),
 
@@ -284,8 +284,10 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
 
 // ── Subwidgets ──────────────────────────────────────────────────────────────
 
-class _ImagePreviewCard extends StatelessWidget {
-  const _ImagePreviewCard({required this.image, required this.colors});
+// ── Dual image preview with independent zoom ───────────────────────────────
+
+class _DualImagePreviewCard extends StatelessWidget {
+  const _DualImagePreviewCard({required this.image, required this.colors});
   final SelectedImage image;
   final NerilumPalette colors;
 
@@ -298,52 +300,78 @@ class _ImagePreviewCard extends StatelessWidget {
         border: Border.all(color: colors.border),
       ),
       padding: const EdgeInsets.all(10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: SizedBox(
-          height: 210,
-          width: double.infinity,
-          child: InkWell(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => ImageZoomPage(image: image),
-              ),
-            ),
-            child: Semantics(
-              label: 'Ampliar imagen analizada',
-              button: true,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.memory(
-                    image.bytes,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => Icon(
-                      Icons.broken_image_outlined,
-                      color: colors.textSecondary,
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.zoom_in,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
-                  ),
-                ],
+      child: SizedBox(
+        height: 220,
+        child: Row(
+          children: [
+            Expanded(child: _ZoomPanel(image: image, colors: colors)),
+            const SizedBox(width: 8),
+            Expanded(child: _ZoomPanel(image: image, colors: colors)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomPanel extends StatelessWidget {
+  const _ZoomPanel({required this.image, required this.colors});
+
+  final SelectedImage image;
+  final NerilumPalette colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Fondo
+          Container(color: Colors.black),
+
+          // Imagen con zoom por pellizco
+          InteractiveViewer(
+            minScale: 0.5,
+            maxScale: 8,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            child: Center(
+              child: Image.memory(
+                image.bytes,
+                fit: BoxFit.contain,
+                errorBuilder: (_, _, _) => Icon(
+                  Icons.broken_image_outlined,
+                  color: colors.textSecondary,
+                ),
               ),
             ),
           ),
-        ),
+
+          // Lupa — abre pantalla completa
+          Positioned(
+            bottom: 8,
+            right: 8,
+            child: Semantics(
+              label: 'Ampliar imagen en pantalla completa',
+              button: true,
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ImageZoomPage(image: image),
+                  ),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.zoom_in, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -123,8 +123,7 @@ class AnalysisDetailView extends StatelessWidget {
 
 // ── Subwidgets ──────────────────────────────────────────────────────────────
 
-/// Cabecera unificada: miniatura tappable a la izquierda, nombre y fecha a la derecha.
-/// Tocar la miniatura abre la imagen a pantalla completa con zoom.
+/// Cabecera: nombre y fecha arriba, dos paneles de imagen con lupa debajo.
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({
     required this.imageBytes,
@@ -155,49 +154,159 @@ class _HeaderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: colors.border),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Miniatura / estado de imagen
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 88,
-              height: 88,
-              child: _ImageSlot(
-                imageBytes: imageBytes,
-                displayName: displayName,
-                hasImage: hasImage,
-                imageLoading: imageLoading,
-                imageError: imageError,
-                onRetry: onRetryImage,
-                colors: colors,
-              ),
+          // ── Nombre ──────────────────────────────────────────
+          Text(
+            displayName ?? 'Análisis sin nombre',
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(width: 14),
-          // Nombre y fecha
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 4),
+          // ── Fecha ────────────────────────────────────────────
+          Row(
+            children: [
+              Icon(Icons.calendar_today_outlined,
+                  size: 13, color: colors.textSecondary),
+              const SizedBox(width: 5),
+              Text(
+                dateStr,
+                style:
+                    TextStyle(color: colors.textSecondary, fontSize: 13),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // ── Dos paneles de imagen ─────────────────────────────
+          SizedBox(
+            height: 200,
+            child: Row(
               children: [
-                Text(
-                  displayName ?? 'Análisis sin nombre',
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: _ImagePanel(
+                    imageBytes: imageBytes,
+                    displayName: displayName,
+                    hasImage: hasImage,
+                    imageLoading: imageLoading,
+                    imageError: imageError,
+                    onRetry: onRetryImage,
+                    colors: colors,
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  dateStr,
-                  style: TextStyle(color: colors.textSecondary, fontSize: 13),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ImagePanel(
+                    imageBytes: imageBytes,
+                    displayName: displayName,
+                    hasImage: hasImage,
+                    imageLoading: imageLoading,
+                    imageError: imageError,
+                    onRetry: onRetryImage,
+                    colors: colors,
+                  ),
                 ),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Panel de imagen con zoom por pellizco y lupa para pantalla completa.
+class _ImagePanel extends StatelessWidget {
+  const _ImagePanel({
+    required this.imageBytes,
+    required this.displayName,
+    required this.hasImage,
+    required this.imageLoading,
+    required this.imageError,
+    required this.onRetry,
+    required this.colors,
+  });
+
+  final Uint8List? imageBytes;
+  final String? displayName;
+  final bool hasImage;
+  final bool imageLoading;
+  final String? imageError;
+  final VoidCallback? onRetry;
+  final NerilumPalette colors;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(color: Colors.black),
+          // Imagen con zoom o estado alternativo
+          if (imageBytes != null)
+            InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 8,
+              boundaryMargin: const EdgeInsets.all(double.infinity),
+              child: Center(
+                child: Image.memory(
+                  imageBytes!,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) =>
+                      _BrokenImageSlot(colors: colors),
+                ),
+              ),
+            )
+          else
+            _ImageSlot(
+              imageBytes: null,
+              displayName: displayName,
+              hasImage: hasImage,
+              imageLoading: imageLoading,
+              imageError: imageError,
+              onRetry: onRetry,
+              colors: colors,
+            ),
+          // Lupa — solo si hay imagen
+          if (imageBytes != null)
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: Semantics(
+                label: 'Ampliar imagen en pantalla completa',
+                button: true,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ImageZoomPage(
+                        image: SelectedImage(
+                          bytes: imageBytes!,
+                          name: displayName ?? 'Imagen del análisis',
+                          extension: 'jpg',
+                        ),
+                      ),
+                    ),
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.zoom_in,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
