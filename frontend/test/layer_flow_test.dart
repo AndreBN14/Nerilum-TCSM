@@ -143,7 +143,8 @@ void main() {
       await tester.tap(find.text('Ver todo'));
       await tester.pumpAndSettle();
       expect(find.text('Caso de prueba'), findsOneWidget);
-      expect(find.text('MildDemented'), findsOneWidget);
+      expect(find.text('MildDemented'), findsNothing);
+      expect(find.text('Demencia leve'), findsOneWidget);
       await tester.tap(find.text('Caso de prueba'));
       await tester.pumpAndSettle();
       expect(find.text('Detalle del análisis'), findsOneWidget);

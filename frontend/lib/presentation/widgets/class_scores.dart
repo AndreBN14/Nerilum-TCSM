@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/category_label.dart';
 import '../../core/utils/score_text.dart';
 import '../../domain/models/analysis_result.dart';
 import '../../core/theme/nerilum_theme.dart';
@@ -52,7 +53,7 @@ class ClassScores extends StatelessWidget {
                       Expanded(
                         flex: 2,
                         child: Text(
-                          category,
+                          categoryLabel(category),
                           maxLines: 2,
                           style: const TextStyle(fontSize: 12),
                         ),
@@ -62,7 +63,7 @@ class ClassScores extends StatelessWidget {
                         flex: 3,
                         child: Semantics(
                           label:
-                              '$category: ${scoreText(result.scores[category]!)}',
+                              '${categoryLabel(category)}: ${scoreText(result.scores[category]!)}',
                           child: LinearProgressIndicator(
                             value: result.scores[category]!.clamp(0.0, 1.0),
                             minHeight: 14,

@@ -80,7 +80,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Historial'), findsOneWidget);
     expect(find.text('Control de seguimiento'), findsOneWidget);
-    expect(find.text('VeryMildDemented'), findsOneWidget);
+    expect(find.text('VeryMildDemented'), findsNothing);
+    expect(find.text('Demencia muy leve'), findsOneWidget);
     expect(find.text('Análisis sin nombre'), findsNothing);
 
     await tester.tap(find.byTooltip('Buscar por nombre'));
@@ -95,7 +96,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Filtrar por clase'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('ModerateDemented').last);
+    await tester.tap(find.text('Demencia moderada').last);
     await tester.pumpAndSettle();
     expect(
       find.text('No hay análisis que coincidan con la búsqueda o el filtro.'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../domain/models/analysis_result.dart';
 import '../../core/theme/nerilum_theme.dart';
+import '../../core/utils/category_label.dart';
 import 'brand_backdrop.dart';
 
 class MainPageWidth extends StatelessWidget {
@@ -158,7 +159,7 @@ class ResultCard extends StatelessWidget {
                   ),
               const SizedBox(height: 8),
               Text(
-                'Clase estimada: ${result.category}',
+                'Clase estimada: ${categoryLabel(result.category)}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: colors.mintSecondary, fontSize: 13),
