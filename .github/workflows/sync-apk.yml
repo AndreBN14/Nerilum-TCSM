@@ -1,0 +1,191 @@
+name: Sync APK to Public Repository
+
+# Solo se dispara manualmente desde la UI de GitHub Actions.
+# Esto da control total sobre cuando se expone la APK al publico.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag a publicar (ej: v1.2.3). Si se deja vacio, se usa el ultimo release."
+        required: false
+        default: ""
+      release_notes:
+        description: "Notas del release para el repo publico (opcional)."
+        required: false
+        default: ""
+      confirm:
+        description: "Escribe CONFIRMAR para proceder con la publicacion publica."
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Copiar nerilum.apk al repo publico
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 0. Validar confirmacion explicita antes de hacer cualquier cosa
+      # -----------------------------------------------------------------------
+      - name: Validar confirmacion
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [[ "${CONFIRM}" != "CONFIRMAR" ]]; then
+            echo "::error::Debes escribir exactamente 'CONFIRMAR' en el campo confirm para proceder."
+            echo "::error::La APK NO fue publicada."
+            exit 1
+          fi
+          echo "Confirmacion recibida. Procediendo con la publicacion."
+
+      # -----------------------------------------------------------------------
+      # 1. Resolver el tag a sincronizar
+      # -----------------------------------------------------------------------
+      - name: Resolver tag objetivo
+        id: resolve_tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_TAG:-}" ]]; then
+            TAG="${INPUT_TAG}"
+            echo "Tag especificado manualmente: ${TAG}"
+          else
+            TAG="$(gh release list \
+                    --repo "${GITHUB_REPOSITORY}" \
+                    --limit 1 \
+                    --exclude-drafts \
+                    --exclude-pre-releases \
+                    --json tagName \
+                    --jq '.[0].tagName')"
+            if [[ -z "${TAG}" ]]; then
+              echo "::error::No se encontro ningun release publicado en ${GITHUB_REPOSITORY}."
+              exit 1
+            fi
+            echo "Ultimo release encontrado: ${TAG}"
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      # -----------------------------------------------------------------------
+      # 2. Verificar que el release tenga el asset nerilum.apk
+      # -----------------------------------------------------------------------
+      - name: Verificar asset nerilum.apk en el release
+        id: verify_asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          ASSET_URL="$(gh release view "${TAG}" \
+                        --repo "${GITHUB_REPOSITORY}" \
+                        --json assets \
+                        --jq '.assets[] | select(.name == "nerilum.apk") | .url')"
+
+          if [[ -z "${ASSET_URL}" ]]; then
+            echo "::error::El release ${TAG} de ${GITHUB_REPOSITORY} no contiene un asset llamado 'nerilum.apk'."
+            exit 1
+          fi
+
+          echo "Asset encontrado: ${ASSET_URL}"
+          echo "asset_url=${ASSET_URL}" >> "${GITHUB_OUTPUT}"
+
+      # -----------------------------------------------------------------------
+      # 3. Descargar el APK desde el release privado
+      # -----------------------------------------------------------------------
+      - name: Descargar nerilum.apk
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          gh release download "${TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "nerilum.apk" \
+            --dir dist
+
+          if [[ ! -s dist/nerilum.apk ]]; then
+            echo "::error::La descarga de nerilum.apk produjo un archivo vacio o no existe."
+            exit 1
+          fi
+
+          echo "APK descargado correctamente: $(du -sh dist/nerilum.apk | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      # 4. Publicar / actualizar el release en el repo publico
+      #    usando el PAT que ese repo publico provee como secreto.
+      # -----------------------------------------------------------------------
+      - name: Publicar nerilum.apk en el repositorio publico
+        env:
+          # Secreto provisto por el repositorio publico.
+          # Configurar en: Settings > Secrets and variables > Actions > New repository secret
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+          # Nombre completo del repositorio publico, ej: "MiOrg/nerilum-releases"
+          PUBLIC_REPO: ${{ vars.PUBLIC_REPO }}
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+          INPUT_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PUBLIC_REPO_PAT}" ]]; then
+            echo "::error::El secreto PUBLIC_REPO_PAT no esta configurado. Agregalo en Settings > Secrets."
+            exit 1
+          fi
+          if [[ -z "${PUBLIC_REPO}" ]]; then
+            echo "::error::La variable PUBLIC_REPO no esta configurada. Agregala en Settings > Variables (ej: MiOrg/nerilum-releases)."
+            exit 1
+          fi
+
+          export GH_TOKEN="${PUBLIC_REPO_PAT}"
+
+          if ! gh repo view "${PUBLIC_REPO}" --json name > /dev/null 2>&1; then
+            echo "::error::El PAT no tiene acceso al repositorio publico '${PUBLIC_REPO}'. Verifica los permisos (scope: contents:write)."
+            exit 1
+          fi
+
+          if gh release view "${TAG}" --repo "${PUBLIC_REPO}" > /dev/null 2>&1; then
+            echo "Release ${TAG} ya existe en ${PUBLIC_REPO}. Actualizando asset..."
+            gh release upload "${TAG}" \
+              --repo "${PUBLIC_REPO}" \
+              --clobber \
+              dist/nerilum.apk
+          else
+            echo "Creando release ${TAG} en ${PUBLIC_REPO}..."
+            NOTES="${INPUT_NOTES:-Nerilum ${TAG}}"
+            gh release create "${TAG}" \
+              --repo "${PUBLIC_REPO}" \
+              --title "Nerilum ${TAG}" \
+              --notes "${NOTES}" \
+              dist/nerilum.apk
+          fi
+
+          echo "nerilum.apk publicado correctamente en ${PUBLIC_REPO} (${TAG})"
+
+      # -----------------------------------------------------------------------
+      # 5. Verificar que el asset sea accesible publicamente
+      # -----------------------------------------------------------------------
+      - name: Verificar acceso publico al asset
+        env:
+          PUBLIC_REPO: ${{ vars.PUBLIC_REPO }}
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          DOWNLOAD_URL="https://github.com/${PUBLIC_REPO}/releases/download/${TAG}/nerilum.apk"
+          echo "Verificando acceso a: ${DOWNLOAD_URL}"
+
+          HTTP_STATUS="$(curl -sI -o /dev/null -w '%{http_code}' -L "${DOWNLOAD_URL}" --max-time 15 || true)"
+
+          if [[ "${HTTP_STATUS}" == "200" ]]; then
+            echo "Asset accesible publicamente (HTTP ${HTTP_STATUS})."
+          else
+            echo "::warning::El asset respondio con HTTP ${HTTP_STATUS}. Es posible que aun no este indexado o que el repo sea privado."
+          fi
