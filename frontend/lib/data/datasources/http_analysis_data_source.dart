@@ -134,10 +134,21 @@ class HttpAnalysisDataSource {
           id is! String) {
         throw const FormatException();
       }
+      Uint8List? gradcam;
+      final encoded = json['gradcam_png'];
+      if (encoded is String && encoded.isNotEmpty) {
+        try {
+          gradcam = base64Decode(encoded);
+        } on FormatException {
+          // La clasificación sigue siendo válida aunque falte la explicación.
+          gradcam = null;
+        }
+      }
       return AnalysisPreview(
         result: AnalysisResultDto.fromJson({...json, 'id': id}),
         saveProof: proof,
         expiresAt: DateTime.parse(expires).toUtc(),
+        gradcam: gradcam,
       );
     } on FormatException {
       throw const AnalysisFailure(

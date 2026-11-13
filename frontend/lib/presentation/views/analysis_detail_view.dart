@@ -10,6 +10,7 @@ import '../../core/utils/score_text.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/class_scores.dart';
 import '../widgets/main_components.dart';
+import '../widgets/zoomable_analysis_image.dart';
 import 'image_zoom_page.dart';
 
 class AnalysisDetailView extends StatelessWidget {
@@ -18,6 +19,7 @@ class AnalysisDetailView extends StatelessWidget {
     required this.result,
     required this.imageBytes,
     required this.onBack,
+    this.gradcamBytes,
     this.onExport,
     this.onShare,
     this.onRetryImage,
@@ -28,6 +30,8 @@ class AnalysisDetailView extends StatelessWidget {
 
   final AnalysisResult result;
   final Uint8List? imageBytes;
+  /// Grad-CAM solo disponible en memoria tras guardar; nunca se persiste.
+  final Uint8List? gradcamBytes;
   final VoidCallback onBack;
   final VoidCallback? onExport;
   final VoidCallback? onShare;
@@ -80,6 +84,7 @@ class AnalysisDetailView extends StatelessWidget {
                 // ── Cabecera: imagen + nombre + fecha ─────────────────────
                 _HeaderCard(
                   imageBytes: imageBytes,
+                  gradcamBytes: gradcamBytes,
                   displayName: result.displayName,
                   dateStr: dateStr,
                   hasImage: result.hasImage,
@@ -128,6 +133,7 @@ class AnalysisDetailView extends StatelessWidget {
 class _HeaderCard extends StatelessWidget {
   const _HeaderCard({
     required this.imageBytes,
+    required this.gradcamBytes,
     required this.displayName,
     required this.dateStr,
     required this.hasImage,
@@ -138,6 +144,7 @@ class _HeaderCard extends StatelessWidget {
   });
 
   final Uint8List? imageBytes;
+  final Uint8List? gradcamBytes;
   final String? displayName;
   final String dateStr;
   final bool hasImage;
@@ -148,6 +155,7 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final gradcam = gradcamBytes;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -155,31 +163,57 @@ class _HeaderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: colors.border),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Miniatura / estado de imagen
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
-              width: 88,
-              height: 88,
-              child: _ImageSlot(
-                imageBytes: imageBytes,
-                displayName: displayName,
-                hasImage: hasImage,
-                imageLoading: imageLoading,
-                imageError: imageError,
-                onRetry: onRetryImage,
-                colors: colors,
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Nombre y fecha
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: gradcam == null
+          ? Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Miniatura / estado de imagen
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    width: 88,
+                    height: 88,
+                    child: _ImageSlot(
+                      imageBytes: imageBytes,
+                      displayName: displayName,
+                      hasImage: hasImage,
+                      imageLoading: imageLoading,
+                      imageError: imageError,
+                      onRetry: onRetryImage,
+                      colors: colors,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                // Nombre y fecha
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayName ?? 'Análisis sin nombre',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        dateStr,
+                        style: TextStyle(
+                          color: colors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
                   displayName ?? 'Análisis sin nombre',
@@ -190,16 +224,43 @@ class _HeaderCard extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   dateStr,
                   style: TextStyle(color: colors.textSecondary, fontSize: 13),
                 ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ZoomableAnalysisImage(
+                        bytes: imageBytes,
+                        label: 'IRM original',
+                        zoomName: displayName ?? 'Imagen del análisis',
+                        colors: colors,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ZoomableAnalysisImage(
+                        bytes: gradcam,
+                        label: 'Grad-CAM',
+                        zoomName: 'Grad-CAM',
+                        colors: colors,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'El Grad-CAM muestra las regiones que más influyeron en la '
+                  'predicción. No identifica lesiones ni sustituye una '
+                  'valoración médica.',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }

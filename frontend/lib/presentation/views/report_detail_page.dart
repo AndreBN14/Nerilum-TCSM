@@ -13,10 +13,12 @@ class ReportDetailPage extends StatefulWidget {
     super.key,
     required this.result,
     required this.imageBytes,
+    this.gradcamBytes,
   });
 
   final AnalysisResult result;
   final Uint8List? imageBytes;
+  final Uint8List? gradcamBytes;
 
   @override
   State<ReportDetailPage> createState() => _ReportDetailPageState();
@@ -61,6 +63,7 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     builder: (context, _) => AnalysisDetailView(
       result: widget.result,
       imageBytes: _report!.imageBytes,
+      gradcamBytes: widget.gradcamBytes,
       imageLoading: _report!.imageLoading,
       imageError: _report!.imageError,
       onRetryImage: _report!.imageError != null
