@@ -805,6 +805,11 @@ components:
           type: string
           title: Save Proof
           description: Comprobante opaco firmado con HMAC-SHA256. Se envía sin modificar a `POST /analyses/save`.
+        gradcam_png:
+          type: string
+          nullable: true
+          title: Gradcam Png
+          description: PNG del Grad-CAM de la clase predicha codificado en base64. Solo existe durante la previsualización; no se persiste ni se incluye en el historial.
         disclaimer:
           type: string
           title: Disclaimer

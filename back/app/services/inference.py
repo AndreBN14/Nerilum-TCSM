@@ -205,31 +205,66 @@ class OnnxClassifier:
         return exp / np.sum(exp)
 
     def _preprocess(self, image):
-        import numpy as np
-        from PIL import Image
+        batch, _ = preprocess_classification(
+            image,
+            resize_mode=self._resize_mode,
+            input_size=int(self._input_size or 224),
+        )
+        return batch
 
-        img = image.convert("RGB")
-        size = int(self._input_size or 224)
 
-        if self._resize_mode == "stretch":
-            img = img.resize((size, size), Image.BILINEAR)
-        elif self._resize_mode == "center_crop":
-            # Referencia Ultralytics: Resize del lado corto a `size` + recorte central.
-            scale = size / min(img.size)
-            img = img.resize(
-                (max(1, round(img.width * scale)), max(1, round(img.height * scale))),
-                Image.BILINEAR,
-            )
-            left = (img.width - size) // 2
-            top = (img.height - size) // 2
-            img = img.crop((left, top, left + size, top + size))
-        else:  # letterbox (SquarePad): conserva proporción y rellena a cuadrado
-            side = max(img.size)
-            canvas = Image.new("RGB", (side, side), (114, 114, 114))
-            offset = ((side - img.width) // 2, (side - img.height) // 2)
-            canvas.paste(img, offset)
-            img = canvas.resize((size, size), Image.BILINEAR)
+def preprocess_classification(
+    image, *, resize_mode: str, input_size: int
+) -> tuple[Any, dict[str, Any]]:
+    """Preprocesado compartido por el clasificador ONNX y el Grad-CAM.
 
-        arr = np.asarray(img, dtype=np.float32) / 255.0
-        arr = np.transpose(arr, (2, 0, 1))
-        return arr[np.newaxis, :, :, :]
+    Devuelve ``(batch, geometria)``. ``batch`` es un ``float32`` NCHW en
+    ``[0, 1]`` RGB (lo que espera tanto el ``.onnx`` como el ``.pt``). La
+    geometría describe cómo proyectar un mapa de tamaño ``input_size`` de vuelta
+    sobre la imagen original, para que el Grad-CAM no quede desplazado cuando
+    el modo es ``center_crop`` o ``letterbox``.
+    """
+
+    import numpy as np
+    from PIL import Image
+
+    img = image.convert("RGB")
+    size = int(input_size or 224)
+    geometry: dict[str, Any]
+
+    if resize_mode == "stretch":
+        img = img.resize((size, size), Image.BILINEAR)
+        geometry = {"mode": "stretch"}
+    elif resize_mode == "center_crop":
+        # Referencia Ultralytics: Resize del lado corto a `size` + recorte central.
+        scale = size / min(img.size)
+        scaled_size = (
+            max(1, round(img.width * scale)),
+            max(1, round(img.height * scale)),
+        )
+        img = img.resize(scaled_size, Image.BILINEAR)
+        left = (img.width - size) // 2
+        top = (img.height - size) // 2
+        img = img.crop((left, top, left + size, top + size))
+        geometry = {
+            "mode": "center_crop",
+            "scaled": scaled_size,
+            "crop_offset": (left, top),
+        }
+    else:  # letterbox (SquarePad): conserva proporción y rellena a cuadrado
+        side = max(img.size)
+        canvas = Image.new("RGB", (side, side), (114, 114, 114))
+        offset = ((side - img.width) // 2, (side - img.height) // 2)
+        content_size = img.size
+        canvas.paste(img, offset)
+        img = canvas.resize((size, size), Image.BILINEAR)
+        geometry = {
+            "mode": "letterbox",
+            "side": side,
+            "content_size": content_size,
+            "offset": offset,
+        }
+
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+    arr = np.transpose(arr, (2, 0, 1))
+    return arr[np.newaxis, :, :, :], geometry

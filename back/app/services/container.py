@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 
 import httpx
 
@@ -8,6 +9,7 @@ from app.core.security import SupabaseJWTVerifier, TokenVerifier
 from app.services.analyses import AnalysisRepository, SqliteAnalysisRepository
 from app.services.analyses_pg import PostgresAnalysisRepository
 from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
+from app.services.gradcam import GradCamExplainer
 from app.services.image_storage import ImageStorage, SupabaseImageStorage
 
 logger = logging.getLogger("nerilum")
@@ -21,6 +23,7 @@ class Services:
     token_verifier: TokenVerifier
     analyses: AnalysisRepository
     image_storage: ImageStorage | None = None
+    explainer: GradCamExplainer | None = None
 
     async def aclose(self) -> None:
         closer = getattr(self.token_verifier, "aclose", None)
@@ -55,6 +58,24 @@ def _build_inference(settings: Settings) -> InferenceStatus:
     )
 
 
+def _resolve_explainer_path(settings: Settings) -> Path | None:
+    """Devuelve el ``.pt`` configurado o el que acompaña a ``MODEL_DIR``."""
+
+    configured = settings.explainer_model_path
+    if configured is not None:
+        path = configured if configured.is_absolute() else BACK_ROOT / configured
+        if path.is_dir():
+            candidates = sorted(path.glob("*.pt"))
+            return candidates[0] if len(candidates) == 1 else None
+        return path if path.is_file() else None
+
+    model_dir = _resolve_model_dir(settings)
+    if model_dir is None or not model_dir.is_dir():
+        return None
+    candidates = sorted(model_dir.glob("*.pt"))
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def create_services(settings: Settings) -> Services:
     # Cliente creado en el arranque de la app (lifespan), nunca al importar.
     client = httpx.AsyncClient(timeout=settings.jwks_timeout_seconds)
@@ -82,8 +103,18 @@ def create_services(settings: Settings) -> Services:
                              settings.analysis_images_bucket)
         if settings.supabase_service_role_key else None
     )
+    explainer_path = _resolve_explainer_path(settings)
+    explainer = (
+        GradCamExplainer(
+            explainer_path,
+            resize_mode=settings.model_resize_mode,
+            input_size=settings.model_input_size,
+        )
+        if explainer_path is not None
+        else None
+    )
     services = Services(inference=inference, token_verifier=verifier, analyses=analyses,
-                        image_storage=image_storage)
+                        image_storage=image_storage, explainer=explainer)
 
     # Semilla de demostración: solo desarrollo, opcional e idempotente.
     if (

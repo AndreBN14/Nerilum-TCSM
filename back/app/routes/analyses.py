@@ -7,6 +7,7 @@ solo si el modelo está cargado; si no, ``POST /analyses`` responde 503.
 
 from __future__ import annotations
 
+import base64
 import logging
 import hashlib
 import unicodedata
@@ -150,7 +151,7 @@ def _summary_from_record(record: AnalysisRecord) -> AnalysisSummary:
 
 
 async def _predict(data: bytes, services: Services, settings: Settings
-                   ) -> tuple[AnalysisPrediction, ModelMetadata]:
+                   ) -> tuple[AnalysisPrediction, ModelMetadata, object]:
     try:
         image = await run_in_threadpool(
             validate_image, data, max_bytes=settings.max_image_bytes,
@@ -181,7 +182,30 @@ async def _predict(data: bytes, services: Services, settings: Settings
     except ValidationError as exc:
         logger.warning("Metadatos de modelo inválidos (error=%s)", type(exc).__name__)
         raise ApiException(500, "internal_error", "Error interno del servidor.") from exc
-    return prediction, model
+    return prediction, model, image
+
+
+async def _gradcam_base64(
+    services: Services, image: object, prediction: AnalysisPrediction
+) -> str | None:
+    """Genera el Grad-CAM si el explicador opcional está disponible.
+
+    Un fallo del explicador nunca tumba la clasificación: se registra el tipo de
+    error (sin datos de la imagen) y la respuesta viaja con ``gradcam_png=None``.
+    """
+
+    explainer = services.explainer
+    info = services.inference.model_info
+    if explainer is None or not explainer.ready or info is None:
+        return None
+    try:
+        # El orden de ``classes`` es el orden de salida del clasificador.
+        index = info.classes.index(prediction.category.value)
+        png = await run_in_threadpool(explainer.render, image, index)
+        return base64.b64encode(png).decode("ascii")
+    except Exception as exc:
+        logger.warning("Grad-CAM no disponible (error=%s)", type(exc).__name__)
+        return None
 
 
 @router.post("", response_model=AnalysisOut, status_code=201, responses={
@@ -216,7 +240,7 @@ async def create_analysis(
         if previous is not None:
             # Recuperar una operación completada incluso si el modelo ahora no está disponible.
             return _to_out(previous)
-    prediction, model_info = await _predict(data, services, settings)
+    prediction, model_info, _image = await _predict(data, services, settings)
 
     record = AnalysisRecord(
         account_id=str(user.id),
@@ -253,7 +277,8 @@ async def preview_analysis(
 ) -> AnalysisPreview:
     require_secret(settings.analysis_proof_secret)
     data = await _read_upload(file, settings.max_image_bytes)
-    prediction, model = await _predict(data, services, settings)
+    prediction, model, image = await _predict(data, services, settings)
+    gradcam = await _gradcam_base64(services, image, prediction)
     payload, proof = issue_proof(user_id=str(user.id), prediction=prediction,
                                  model=model, secret=settings.analysis_proof_secret,
                                  image_sha256=hashlib.sha256(data).hexdigest())
@@ -261,7 +286,7 @@ async def preview_analysis(
         preview_id=payload["preview_id"], category=prediction.category,
         probability=prediction.probability, scores=prediction.scores,
         created_at=payload["created_at"], expires_at=payload["expires_at"],
-        save_proof=proof, model=model,
+        save_proof=proof, model=model, gradcam_png=gradcam,
     )
 
 

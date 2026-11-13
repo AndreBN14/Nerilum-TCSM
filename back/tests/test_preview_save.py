@@ -22,9 +22,10 @@ def _png():
     return buffer.getvalue()
 
 
-def _app(stub, inference=None, secret=SECRET, storage=None):
+def _app(stub, inference=None, secret=SECRET, storage=None, explainer=None):
     return build_app(build_verifier(stub), inference=inference or FakeInference(),
-                     settings_overrides={"analysis_proof_secret": secret}, image_storage=storage)
+                     settings_overrides={"analysis_proof_secret": secret},
+                     image_storage=storage, explainer=explainer)
 
 
 class MemoryStorage:
@@ -288,3 +289,39 @@ def test_concurrent_image_saves_keep_one_record_and_one_original(stub, keypair):
     assert sorted(response.status_code for response in results) == [200, 201]
     assert results[0].json() == results[1].json()
     assert total == 1 and len(storage.objects) == 1
+
+
+class FakeExplainer:
+    ready = True
+
+    def __init__(self, png=b"\x89PNG\r\n\x1a\nfake", fail=False):
+        self.png = png
+        self.fail = fail
+        self.calls = []
+
+    def render(self, image, target_index):
+        self.calls.append(target_index)
+        if self.fail:
+            raise RuntimeError("fallo simulado")
+        return self.png
+
+
+def test_preview_returns_gradcam_for_predicted_class(stub, keypair):
+    explainer = FakeExplainer()
+    with TestClient(_app(stub, explainer=explainer)) as client:
+        response = _preview(client, _headers(keypair))
+    data = response.json()
+    # FakeInference predice NonDemented, índice 0 del orden de clases.
+    assert explainer.calls == [0]
+    assert base64.b64decode(data["gradcam_png"]) == explainer.png
+    assert data["save_proof"]
+
+
+def test_preview_survives_gradcam_failure(stub, keypair):
+    with TestClient(_app(stub, explainer=FakeExplainer(fail=True))) as client:
+        response = _preview(client, _headers(keypair))
+    data = response.json()
+    assert response.status_code == 200
+    assert data["gradcam_png"] is None
+    assert data["category"] == "NonDemented"
+

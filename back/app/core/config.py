@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACK_ROOT = Path(__file__).resolve().parents[2]
@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     database_url: str | None = None
     database_path: Path = Field(default=BACK_ROOT / "data" / "nerilum.db")
     model_dir: Path | None = None
+    # Checkpoint PyTorch opcional para Grad-CAM. Si es una carpeta se busca un
+    # único *.pt; si no se define, se usa MODEL_DIR precedido de *.pt.
+    explainer_model_path: Path | None = None
     model_input_size: int | None = Field(default=None, ge=32)
     model_resize_mode: Literal["letterbox", "center_crop", "stretch"] = "center_crop"
     model_softmax: bool = False
@@ -69,6 +72,19 @@ class Settings(BaseSettings):
     analysis_proof_secret: str = ""
     supabase_service_role_key: str = ""
     analysis_images_bucket: str = "analysis-images"
+
+    @field_validator("seed_demo_account_id", mode="before")
+    @classmethod
+    def _blank_uuid_is_unset(cls, value: object) -> object:
+        """Un valor vacío en ``.env`` significa "no configurado".
+
+        Sin esto, copiar ``.env.example`` tal cual (``SEED_DEMO_ACCOUNT_ID=``)
+        impide arrancar con un error de validación de UUID.
+        """
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def use_postgres(self) -> bool:

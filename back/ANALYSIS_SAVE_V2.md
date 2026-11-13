@@ -29,9 +29,14 @@ Las rutas nuevas usan el mismo JWT de Supabase que el resto de la API.
   "model": {"name": "yolov8n-cls", "version": "v0.1", "dataset": "..."},
   "save_proof": "<comprobante opaco firmado>",
   "expires_at": "2026-10-24T16:00:00Z",
+  "gradcam_png": "<PNG base64 o null>",
   "disclaimer": "Resultado orientativo. No constituye un diagnóstico médico."
 }
 ```
+
+`gradcam_png` solo aparece si el explicador opcional (`best.pt`) está
+disponible; si falla, viaja como `null` y la clasificación sigue siendo válida.
+No se guarda en la base ni en Storage.
 
 `scores`/`category` se validan antes de firmar. El comprobante contiene el UUID
 del usuario autenticado, `preview_id`, fecha de inferencia, categoría,

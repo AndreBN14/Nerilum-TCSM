@@ -4,10 +4,10 @@
   "dataset": "Alzheimer MRI Dataset (Kaggle)",
   "task": "classify",
   "classes": [
-    "NonDemented",
-    "VeryMildDemented",
     "MildDemented",
-    "ModerateDemented"
+    "ModerateDemented",
+    "NonDemented",
+    "VeryMildDemented"
   ],
   "trained_at": "2026-11-06"
 }

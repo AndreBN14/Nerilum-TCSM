@@ -234,6 +234,12 @@ threadpool para mantener disponible el event loop durante las operaciones síncr
   de Ultralytics (Resize del lado corto + recorte central). Los argumentos exactos
   del entrenamiento no están disponibles, así que la equivalencia completa con el
   entrenamiento **aún no está demostrada**.
+- **Grad-CAM opcional:** si se copia `best.pt` junto al `.onnx` (o se define
+  `EXPLAINER_MODEL_PATH`), `POST /analyses/preview` añade `gradcam_png`
+  (base64) con la explicación de la clase predicha. Requiere
+  `pip install -r requirements-explain.txt` (PyTorch CPU). El mapa no se
+  guarda en la base ni en Storage: solo se muestra en la previsualización y,
+  en memoria, en el detalle inmediatamente posterior a guardar.
 - `SEED_DEMO` (solo `APP_ENV=development`), con `SEED_DEMO_ACCOUNT_ID`, crea
   registros demo idempotentes marcados `is_demo=true`. La API nunca genera
   análisis marcados como demo.
@@ -292,6 +298,7 @@ proceso tienen prioridad.
 | `MODEL_INPUT_SIZE` | vacío | Tamaño de entrada; si falta, el declarado en ONNX. |
 | `MODEL_RESIZE_MODE` | `center_crop` | `letterbox`, `center_crop` o `stretch`. Por defecto el pipeline de referencia de Ultralytics. |
 | `MODEL_SOFTMAX` | `false` | Aplica softmax solo si el modelo devuelve logits; este ONNX ya normaliza. |
+| `EXPLAINER_MODEL_PATH` | vacío | `best.pt` opcional (archivo o carpeta) para Grad-CAM; si está vacío se busca un `*.pt` en `MODEL_DIR`. |
 | `MAX_IMAGE_BYTES` | `10485760` | Tamaño máximo de las imágenes subidas. |
 | `MAX_IMAGE_DIMENSION` | `4096` | Máximo alto/ancho en píxeles. |
 | `MAX_IMAGE_PIXELS` | `16777216` | Máximo número de píxeles totales (w*h). El límite de píxeles y el de dimensión se aplican a la vez. |
