@@ -48,6 +48,7 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     final success = await _report!.export(
       widget.result,
       imageBytes: _report!.imageBytes,
+      gradcamBytes: widget.gradcamBytes,
       share: share,
     );
     if (!mounted) return;

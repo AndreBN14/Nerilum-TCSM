@@ -539,6 +539,9 @@ class MainViewModel extends ChangeNotifier {
       );
       if (_disposed || session != _sessionVersion) return;
       result = saved;
+      // Aunque el backend no guarde la imagen, la selección sigue en memoria:
+      // así el detalle y el PDF muestran la IRM junto al Grad-CAM.
+      _rememberImage(saved.id);
       _rememberGradcam(saved.id);
       preview = null;
       activePendingId = null;

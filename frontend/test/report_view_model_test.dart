@@ -10,12 +10,15 @@ import 'package:frontend/presentation/viewmodels/report_view_model.dart';
 
 class _Pdf implements ReportRepository {
   Uint8List? lastImage;
+  Uint8List? lastGradcam;
   @override
   Future<Uint8List> buildPdf(
     AnalysisResult analysis, {
     Uint8List? imageBytes,
+    Uint8List? gradcamBytes,
   }) async {
     lastImage = imageBytes;
+    lastGradcam = gradcamBytes;
     return Uint8List.fromList([1, 2, 3]);
   }
 }
@@ -99,6 +102,24 @@ void main() {
       expect(calls, 1);
     },
   );
+
+  test('El PDF recibe también el Grad-CAM cuando está disponible', () async {
+    final pdf = _Pdf();
+    final model = ReportViewModel(
+      GenerateReport(pdf),
+      PresentReport(_Output()),
+    );
+    addTearDown(model.dispose);
+    final result = AnalysisResult(
+      displayName: 'Caso',
+      category: 'NonDemented',
+      createdAt: DateTime.utc(2026, 10, 24),
+    );
+    final gradcam = Uint8List.fromList([4, 5, 6]);
+
+    expect(await model.export(result, gradcamBytes: gradcam), isTrue);
+    expect(pdf.lastGradcam, gradcam);
+  });
 
   test('No genera un PDF incompleto cuando falta la imagen asociada', () async {
     final pdf = _Pdf();
