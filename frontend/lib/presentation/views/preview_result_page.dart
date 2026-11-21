@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'dart:typed_data';
+
 import '../../domain/models/analysis_result.dart';
 import '../../domain/models/selected_image.dart';
 import '../../core/theme/nerilum_theme.dart';
@@ -9,6 +11,7 @@ import '../viewmodels/main_view_model.dart';
 import '../widgets/brand_backdrop.dart';
 import '../widgets/class_scores.dart';
 import '../widgets/main_components.dart';
+import '../widgets/zoomable_analysis_image.dart';
 import 'image_zoom_page.dart';
 
 class PreviewResultPage extends StatefulWidget {
@@ -188,7 +191,11 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
 
                       // ── Imagen con zoom ────────────────────────────
                       if (image != null)
-                        _ImagePreviewCard(image: image, colors: colors),
+                        _ImagePreviewCard(
+                          image: image,
+                          gradcam: preview.gradcam,
+                          colors: colors,
+                        ),
 
                       const SizedBox(height: 16),
 
@@ -285,12 +292,18 @@ class _PreviewResultPageState extends State<PreviewResultPage> {
 // ── Subwidgets ──────────────────────────────────────────────────────────────
 
 class _ImagePreviewCard extends StatelessWidget {
-  const _ImagePreviewCard({required this.image, required this.colors});
+  const _ImagePreviewCard({
+    required this.image,
+    required this.colors,
+    this.gradcam,
+  });
   final SelectedImage image;
   final NerilumPalette colors;
+  final Uint8List? gradcam;
 
   @override
   Widget build(BuildContext context) {
+    final gradcamBytes = gradcam;
     return Container(
       decoration: BoxDecoration(
         color: colors.surface.withValues(alpha: 0.6),
@@ -298,53 +311,88 @@ class _ImagePreviewCard extends StatelessWidget {
         border: Border.all(color: colors.border),
       ),
       padding: const EdgeInsets.all(10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: SizedBox(
-          height: 210,
-          width: double.infinity,
-          child: InkWell(
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => ImageZoomPage(image: image),
-              ),
-            ),
-            child: Semantics(
-              label: 'Ampliar imagen analizada',
-              button: true,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.memory(
-                    image.bytes,
-                    fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) => Icon(
-                      Icons.broken_image_outlined,
-                      color: colors.textSecondary,
+      child: gradcamBytes == null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                height: 210,
+                width: double.infinity,
+                child: InkWell(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ImageZoomPage(image: image),
                     ),
                   ),
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Icons.zoom_in,
-                        color: Colors.white,
-                        size: 18,
-                      ),
+                  child: Semantics(
+                    label: 'Ampliar imagen analizada',
+                    button: true,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.memory(
+                          image.bytes,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => Icon(
+                            Icons.broken_image_outlined,
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.zoom_in,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ZoomableAnalysisImage(
+                        bytes: image.bytes,
+                        label: 'IRM original',
+                        zoomName: image.name,
+                        colors: colors,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ZoomableAnalysisImage(
+                        bytes: gradcamBytes,
+                        label: 'Grad-CAM',
+                        zoomName: 'Grad-CAM',
+                        colors: colors,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'El Grad-CAM muestra las regiones que más influyeron en la '
+                  'predicción. No identifica lesiones ni sustituye una '
+                  'valoración médica.',
+                  style: TextStyle(color: colors.textSecondary, fontSize: 11),
+                ),
+              ],
             ),
-          ),
-        ),
-      ),
     );
   }
 }

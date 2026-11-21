@@ -1,0 +1,10 @@
+# Dependencias OPCIONALES para el Grad-CAM con best.pt (YOLOv5-cls).
+# El clasificador de producción funciona solo con requirements.txt + ONNX.
+# Instalar únicamente si se habilita EXPLAINER_MODEL_PATH o se copia best.pt
+# junto al .onnx en MODEL_DIR:
+#
+#   pip install -r requirements-explain.txt
+#
+# Usa la rueda CPU de PyTorch para no arrastrar CUDA en el servidor.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.2,<3.0

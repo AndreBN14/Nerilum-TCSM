@@ -240,6 +240,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         builder: (routeContext) => ReportDetailPage(
           result: result,
           imageBytes: model.imageForRecord(result.id),
+          gradcamBytes: model.gradcamForRecord(result.id),
         ),
       ),
     );

@@ -106,9 +106,13 @@ class MainViewModel extends ChangeNotifier {
   int _sortRevision = 0;
   Future<void> _sortWrites = Future<void>.value();
   final _sessionImages = <String, Uint8List>{};
+  final _sessionGradcams = <String, Uint8List>{};
 
   Uint8List? imageForRecord(String? id) =>
       id == null ? null : _sessionImages[id];
+
+  Uint8List? gradcamForRecord(String? id) =>
+      id == null ? null : _sessionGradcams[id];
 
   void _rememberImage(String? id) {
     if (id == null || image == null) return;
@@ -116,6 +120,18 @@ class MainViewModel extends ChangeNotifier {
     _sessionImages[id] = image!.bytes;
     while (_sessionImages.length > 3) {
       _sessionImages.remove(_sessionImages.keys.first);
+    }
+  }
+
+  /// El Grad-CAM no se persiste: se conserva solo en memoria para el detalle
+  /// inmediatamente posterior a guardar el análisis.
+  void _rememberGradcam(String? id) {
+    final bytes = preview?.gradcam;
+    if (id == null || bytes == null) return;
+    _sessionGradcams.remove(id);
+    _sessionGradcams[id] = bytes;
+    while (_sessionGradcams.length > 3) {
+      _sessionGradcams.remove(_sessionGradcams.keys.first);
     }
   }
 
@@ -477,6 +493,7 @@ class MainViewModel extends ChangeNotifier {
       if (_disposed || session != _sessionVersion) return;
       result = saved;
       _rememberImage(saved.id);
+      _rememberGradcam(saved.id);
       preview = null;
       activePendingId = null;
       _saveCommitted = false;
@@ -522,6 +539,10 @@ class MainViewModel extends ChangeNotifier {
       );
       if (_disposed || session != _sessionVersion) return;
       result = saved;
+      // Aunque el backend no guarde la imagen, la selección sigue en memoria:
+      // así el detalle y el PDF muestran la IRM junto al Grad-CAM.
+      _rememberImage(saved.id);
+      _rememberGradcam(saved.id);
       preview = null;
       activePendingId = null;
       _saveCommitted = false;
@@ -641,6 +662,7 @@ class MainViewModel extends ChangeNotifier {
     _saveCommitted = false;
     saving = false;
     _sessionImages.clear();
+    _sessionGradcams.clear();
     error = null;
     canQueueImage = false;
     pendingError = null;

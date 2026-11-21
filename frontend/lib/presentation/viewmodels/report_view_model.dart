@@ -57,6 +57,7 @@ class ReportViewModel extends ChangeNotifier {
   Future<bool> export(
     AnalysisResult result, {
     Uint8List? imageBytes,
+    Uint8List? gradcamBytes,
     bool share = false,
   }) async {
     if (busy) return false;
@@ -74,6 +75,7 @@ class ReportViewModel extends ChangeNotifier {
       final bytes = await generateReport(
         result,
         imageBytes: imageBytes ?? this.imageBytes,
+        gradcamBytes: gradcamBytes,
       );
       if (_disposed) return false;
       final rawName = result.displayName ?? 'analisis_nerilum';

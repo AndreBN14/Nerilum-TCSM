@@ -26,6 +26,13 @@ def test_default_inference_settings_match_onnx_artifact() -> None:
     assert settings.model_softmax is False
 
 
+def test_blank_seed_demo_account_id_is_unset(monkeypatch) -> None:
+    # Copiar .env.example tal cual no debe impedir el arranque.
+    monkeypatch.setenv("SEED_DEMO_ACCOUNT_ID", "")
+    settings = Settings(_env_file=None)
+    assert settings.seed_demo_account_id is None
+
+
 def test_legacy_model_env_warns_with_names_but_not_values(monkeypatch, caplog) -> None:
     from app.core.config import warn_legacy_model_env
 

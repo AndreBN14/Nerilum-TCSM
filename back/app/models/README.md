@@ -67,4 +67,19 @@ Si falta la carpeta, falta el `.onnx` o el card, falta `names`, la tarea no es
 `/api/v1/health` responde `model_ready=false` con `model_name`/`model_version`
 en `null`, y `POST /api/v1/analyses` responde `503 model_unavailable`.
 
+## Grad-CAM opcional (`best.pt`)
+
+Copia en esta carpeta el checkpoint `best.pt` del mismo entrenamiento que el
+`.onnx`. El backend lo detecta solo (o usa `EXPLAINER_MODEL_PATH`) y
+`POST /api/v1/analyses/preview` devuelve `gradcam_png` en base64 junto a la
+clasificación. Requiere instalar PyTorch CPU:
+
+```bash
+pip install -r requirements-explain.txt
+```
+
+El Grad-CAM no se guarda en la base ni en Storage: se muestra en la
+previsualización y, en memoria, en el detalle inmediatamente posterior a
+guardar. Los `*.pt` tampoco se versionan.
+
 No confundir esta carpeta con tablas o modelos ORM de la base de datos.

@@ -31,26 +31,11 @@ class PdfReportRepository implements ReportRepository {
   Future<Uint8List> buildPdf(
     AnalysisResult analysis, {
     Uint8List? imageBytes,
+    Uint8List? gradcamBytes,
   }) async {
-    // ── Preprocesar imagen ───────────────────────────────────────────────────
-    Uint8List? reportImage = imageBytes;
-    if (imageBytes != null) {
-      final decoded = img.decodeImage(imageBytes);
-      if (decoded == null) {
-        throw const FormatException('Imagen no válida para el PDF');
-      }
-      final maxSide =
-          decoded.width > decoded.height ? decoded.width : decoded.height;
-      if (maxSide > 1200) {
-        final resized = img.copyResize(
-          decoded,
-          width: (decoded.width * 1200 / maxSide).round(),
-          height: (decoded.height * 1200 / maxSide).round(),
-        );
-        reportImage =
-            Uint8List.fromList(img.encodeJpg(resized, quality: 90));
-      }
-    }
+    // ── Preprocesar imágenes ─────────────────────────────────────────────────
+    final reportImage = _prepareImage(imageBytes);
+    final reportGradcam = _prepareImage(gradcamBytes);
 
     // ── Fuentes ──────────────────────────────────────────────────────────────
     final regular = pw.Font.ttf(
@@ -130,7 +115,7 @@ class PdfReportRepository implements ReportRepository {
         build: (_) => [
           // ── Línea de acento bajo el encabezado ──────────────────────────
           pw.Container(height: 2, color: _kMint),
-          pw.SizedBox(height: 28),
+          pw.SizedBox(height: 18),
 
           // ── Título del reporte ───────────────────────────────────────────
           pw.Text(
@@ -150,43 +135,53 @@ class PdfReportRepository implements ReportRepository {
               color: _kTextSecondary,
             ),
           ),
-          pw.SizedBox(height: 28),
+          pw.SizedBox(height: 18),
 
-          // ── Imagen del análisis ──────────────────────────────────────────
-          if (reportImage != null) ...[
-            _sectionLabel('Imagen analizada', bold),
+          // ── Imágenes del análisis ────────────────────────────────────────
+          if (reportImage != null || reportGradcam != null) ...[
+            _sectionLabel('Imágenes del análisis', bold),
             pw.SizedBox(height: 10),
-            pw.Container(
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: _kBorder, width: 1),
-                borderRadius: pw.BorderRadius.circular(6),
-                color: _kSurface,
-              ),
-              padding: const pw.EdgeInsets.all(10),
-              child: pw.Center(
-                child: pw.ClipRRect(
-                  horizontalRadius: 4,
-                  verticalRadius: 4,
-                  child: pw.ConstrainedBox(
-                    constraints: const pw.BoxConstraints(maxHeight: 220),
-                    child: pw.Image(
-                      pw.MemoryImage(reportImage),
-                      fit: pw.BoxFit.contain,
+            if (reportImage != null && reportGradcam != null)
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: _imageTile(
+                      bytes: reportImage,
+                      label: 'IRM original',
+                      bold: bold,
                     ),
                   ),
-                ),
+                  pw.SizedBox(width: 12),
+                  pw.Expanded(
+                    child: _imageTile(
+                      bytes: reportGradcam,
+                      label: 'Grad-CAM',
+                      bold: bold,
+                    ),
+                  ),
+                ],
+              )
+            else
+              _imageTile(
+                bytes: reportImage ?? reportGradcam!,
+                label: reportImage != null ? 'IRM original' : 'Grad-CAM',
+                bold: bold,
               ),
-            ),
             pw.SizedBox(height: 6),
             pw.Text(
-              'Imagen de resonancia magnética asociada al análisis.',
+              reportGradcam != null
+                  ? 'El Grad-CAM muestra las regiones que más influyeron en la '
+                        'predicción. No identifica lesiones ni sustituye una '
+                        'valoración médica.'
+                  : 'Imagen de resonancia magnética asociada al análisis.',
               style: pw.TextStyle(
                 font: regular,
                 fontSize: 9,
                 color: _kTextSecondary,
               ),
             ),
-            pw.SizedBox(height: 28),
+            pw.SizedBox(height: 18),
           ],
 
           // ── Resultado principal ──────────────────────────────────────────
@@ -250,7 +245,7 @@ class PdfReportRepository implements ReportRepository {
               ],
             ),
           ),
-          pw.SizedBox(height: 28),
+          pw.SizedBox(height: 18),
 
           // ── Distribución de clases ───────────────────────────────────────
           _sectionLabel('Distribución de probabilidades por clase', bold),
@@ -315,6 +310,65 @@ class PdfReportRepository implements ReportRepository {
   }
 
   // ── Helpers de composición ───────────────────────────────────────────────
+
+  /// Reduce imágenes muy grandes para no inflar el PDF.
+  static Uint8List? _prepareImage(Uint8List? imageBytes) {
+    if (imageBytes == null) return null;
+    final decoded = img.decodeImage(imageBytes);
+    if (decoded == null) {
+      throw const FormatException('Imagen no válida para el PDF');
+    }
+    final maxSide =
+        decoded.width > decoded.height ? decoded.width : decoded.height;
+    if (maxSide <= 1200) return imageBytes;
+    final resized = img.copyResize(
+      decoded,
+      width: (decoded.width * 1200 / maxSide).round(),
+      height: (decoded.height * 1200 / maxSide).round(),
+    );
+    return Uint8List.fromList(img.encodeJpg(resized, quality: 90));
+  }
+
+  static pw.Widget _imageTile({
+    required Uint8List bytes,
+    required String label,
+    required pw.Font bold,
+  }) => pw.Column(
+    crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+    children: [
+      pw.Container(
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: _kBorder, width: 1),
+          borderRadius: pw.BorderRadius.circular(6),
+          color: _kSurface,
+        ),
+        padding: const pw.EdgeInsets.all(8),
+        child: pw.Center(
+          child: pw.ClipRRect(
+            horizontalRadius: 4,
+            verticalRadius: 4,
+            child: pw.ConstrainedBox(
+              constraints: const pw.BoxConstraints(maxHeight: 150),
+              child: pw.Image(
+                pw.MemoryImage(bytes),
+                fit: pw.BoxFit.contain,
+              ),
+            ),
+          ),
+        ),
+      ),
+      pw.SizedBox(height: 5),
+      pw.Text(
+        label,
+        textAlign: pw.TextAlign.center,
+        style: pw.TextStyle(
+          font: bold,
+          fontSize: 9,
+          color: _kTextSecondary,
+        ),
+      ),
+    ],
+  );
 
   static pw.Widget _sectionLabel(String text, pw.Font bold) =>
       pw.Text(

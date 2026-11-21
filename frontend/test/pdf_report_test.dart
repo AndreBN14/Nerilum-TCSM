@@ -37,12 +37,18 @@ void main() {
     final image = data.buffer.asUint8List();
     final repository = const PdfReportRepository();
     final withImage = await repository.buildPdf(result, imageBytes: image);
+    final withBoth = await repository.buildPdf(
+      result,
+      imageBytes: image,
+      gradcamBytes: image,
+    );
     final noScores = await repository.buildPdf(
       AnalysisResult(
         category: 'MildDemented',
         createdAt: DateTime.utc(2026, 10, 24),
       ),
     );
+    expect(withBoth.length, greaterThan(withImage.length));
     expect(withImage.length, greaterThan(noScores.length));
     expect(utf8.decode(noScores.sublist(0, 5)), '%PDF-');
   });

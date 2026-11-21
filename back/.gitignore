@@ -12,3 +12,4 @@ data/
 
 # Artefacto del modelo (se sirve sin versionar en el repo)
 app/models/*.onnx
+app/models/*.pt
