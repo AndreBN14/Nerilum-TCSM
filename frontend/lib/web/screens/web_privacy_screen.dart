@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/nerilum_theme.dart';
 import '../states/web_view_states.dart';
 import '../web_page_scaffold.dart';
+import '../widgets/web_dialogs.dart';
 
 /// Vista Privacidad del portal web.
 ///
@@ -63,7 +64,7 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
   //   // El _AuthGate vuelve al login.
   //
   Future<void> _confirmAndDelete() async {
-    final ok = await showDialog<bool>(
+    final ok = await showBlurDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Eliminar cuenta'),

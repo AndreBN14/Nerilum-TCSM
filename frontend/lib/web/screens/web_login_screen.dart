@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/nerilum_theme.dart';
+import 'web_forgot_password_dialog.dart';
 
 /// Login / registro del portal web.
 ///
@@ -82,53 +83,12 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
         // El _AuthGate detecta la sesión y abre el portal automáticamente.
       }
     } on AuthException catch (e) {
-      if (mounted) setState(() => _errorMessage = _friendlyError(e.message));
+      if (mounted) setState(() => _errorMessage = friendlyAuthError(e.message));
     } catch (_) {
       if (mounted) setState(() => _errorMessage = 'Error inesperado. Intenta de nuevo.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  Future<void> _recoverPassword() async {
-    final email = _emailCtrl.text.trim();
-    if (email.isEmpty || !email.contains('@')) {
-      setState(() => _errorMessage = 'Ingresa tu correo para recuperar la contraseña.');
-      return;
-    }
-    setState(() {
-      _loading = true;
-      _errorMessage = null;
-      _infoMessage = null;
-    });
-    try {
-      // TODO: recuperar contraseña con Supabase Auth.
-      await Supabase.instance.client.auth.resetPasswordForEmail(email);
-      if (mounted) {
-        setState(() => _infoMessage = 'Te enviamos un correo para restablecer tu contraseña.');
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() => _errorMessage = 'No se pudo enviar el correo. Inténtalo de nuevo.');
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('invalid login credentials') ||
-        lower.contains('invalid credentials')) {
-      return 'Correo o contraseña incorrectos.';
-    }
-    if (lower.contains('email not confirmed')) {
-      return 'Confirma tu correo antes de ingresar.';
-    }
-    if (lower.contains('too many requests')) {
-      return 'Demasiados intentos. Espera un momento.';
-    }
-    return raw;
   }
 
   void _toggleMode() => setState(() {
@@ -296,12 +256,15 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
               ),
             ],
 
-            // Recuperar contraseña (solo login)
+            // Recuperar contraseña (solo login): abre el modal dedicado
+            // con su propio campo de correo.
             if (!_isRegister)
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: _loading ? null : _recoverPassword,
+                  onPressed: _loading
+                      ? null
+                      : () => showForgotPasswordDialog(context),
                   child: const Text('¿Olvidaste tu contraseña?'),
                 ),
               ),

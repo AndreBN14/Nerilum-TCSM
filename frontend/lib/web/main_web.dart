@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -6,6 +8,7 @@ import '../core/theme/nerilum_theme.dart';
 import '../data/datasources/http_analysis_data_source.dart';
 import '../domain/repositories/analysis_repository.dart';
 import 'screens/web_login_screen.dart';
+import 'screens/web_reset_password_screen.dart';
 import 'web_portal_shell.dart';
 
 /// Entry point para la app web de prueba.
@@ -109,11 +112,48 @@ class NerilumWebApp extends StatelessWidget {
   }
 }
 
-/// Decide si mostrar login o home según la sesión activa.
-class _AuthGate extends StatelessWidget {
+/// ¿La sesión actual proviene del enlace de recuperación de contraseña?
+///
+/// Supabase marca la sesión generada por ese enlace dentro del JWT: el claim
+/// `amr` (métodos de autenticación) incluye una entrada `recovery`. Leer la
+/// marca es más fiable que esperar el evento `passwordRecovery`, que con el
+/// flujo PKCE puede no emitirse. La regla oficial es la entrada con el
+/// timestamp más reciente.
+bool _isRecoverySession(Session session) {
+  final parts = session.accessToken.split('.');
+  if (parts.length < 2) return false;
+  final dynamic payload;
+  try {
+    payload = jsonDecode(
+      utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+    );
+  } catch (_) {
+    return false;
+  }
+  final amr = payload['amr'];
+  if (amr is! List || amr.isEmpty) return false;
+  final entries = amr.whereType<Map>().toList()
+    ..sort((a, b) => (b['timestamp'] ?? 0).compareTo(a['timestamp'] ?? 0));
+  return entries.first['method'] == 'recovery';
+}
+
+/// Decide si mostrar login, recuperación o portal según la sesión activa.
+class _AuthGate extends StatefulWidget {
   const _AuthGate({this.analysisSource});
 
   final HttpAnalysisDataSource? analysisSource;
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  // Modo recuperación pegajoso: mientras la sesión provenga del enlace del
+  // correo, el portal no muestra datos hasta que se defina la nueva
+  // contraseña. Sin esto, cualquier evento posterior (p. ej. el refresco
+  // automático del token) re-evaluaría el gate y pintaría el portal con
+  // los datos del usuario dentro de una sesión de recuperación.
+  bool _recoveryMode = false;
 
   @override
   Widget build(BuildContext context) {
@@ -121,13 +161,26 @@ class _AuthGate extends StatelessWidget {
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
         // Mientras llega el primer evento revisamos la sesión local.
-        final session = Supabase.instance.client.auth.currentSession;
+        final auth = Supabase.instance.client.auth;
+        final session = auth.currentSession;
+        final event = snapshot.data?.event;
+
+        if (event == AuthChangeEvent.signedOut) {
+          _recoveryMode = false;
+          return const WebLoginScreen();
+        }
+
+        // Modo recuperación: por el evento o por la firma de la sesión.
+        // Persiste hasta un signedOut (tras guardar la contraseña).
+        final inRecovery = event == AuthChangeEvent.passwordRecovery ||
+            (session != null && _isRecoverySession(session));
+        _recoveryMode = inRecovery || _recoveryMode && session != null;
+
+        if (_recoveryMode && session != null) {
+          return WebResetPasswordScreen(user: session.user);
+        }
 
         if (snapshot.hasData) {
-          final event = snapshot.data!.event;
-          if (event == AuthChangeEvent.signedOut) {
-            return const WebLoginScreen();
-          }
           if (event == AuthChangeEvent.signedIn ||
               event == AuthChangeEvent.tokenRefreshed ||
               event == AuthChangeEvent.initialSession) {
@@ -135,7 +188,7 @@ class _AuthGate extends StatelessWidget {
             if (user != null) {
               return WebPortalShell(
                 user: user,
-                analysisSource: analysisSource,
+                analysisSource: widget.analysisSource,
               );
             }
           }
@@ -145,7 +198,7 @@ class _AuthGate extends StatelessWidget {
         if (session != null) {
           return WebPortalShell(
             user: session.user,
-            analysisSource: analysisSource,
+            analysisSource: widget.analysisSource,
           );
         }
 
