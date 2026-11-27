@@ -156,7 +156,7 @@ class PdfReportRepository implements ReportRepository {
                   pw.Expanded(
                     child: _imageTile(
                       bytes: reportGradcam,
-                      label: 'Grad-CAM',
+                      label: 'Mapa de atención',
                       bold: bold,
                     ),
                   ),
@@ -165,14 +165,14 @@ class PdfReportRepository implements ReportRepository {
             else
               _imageTile(
                 bytes: reportImage ?? reportGradcam!,
-                label: reportImage != null ? 'IRM original' : 'Grad-CAM',
+                label: reportImage != null ? 'IRM original' : 'Mapa de atención',
                 bold: bold,
               ),
             pw.SizedBox(height: 6),
             pw.Text(
               reportGradcam != null
-                  ? 'El Grad-CAM muestra las regiones que más influyeron en la '
-                        'predicción. No identifica lesiones ni sustituye una '
+                  ? 'El mapa de atención muestra en qué zonas se fijó más el '
+                        'sistema. No identifica lesiones ni sustituye una '
                         'valoración médica.'
                   : 'Imagen de resonancia magnética asociada al análisis.',
               style: pw.TextStyle(

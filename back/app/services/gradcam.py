@@ -21,7 +21,6 @@ predicción que se muestra en la app.
 
 from __future__ import annotations
 
-import io
 import logging
 import sys
 import threading
@@ -29,6 +28,7 @@ import types
 from pathlib import Path
 from typing import Any
 
+from app.services.heatmap import overlay_png
 from app.services.inference import preprocess_classification
 
 logger = logging.getLogger("nerilum")
@@ -106,46 +106,6 @@ def _install_yolov5_stubs() -> None:
     sys.modules["models"] = package
     sys.modules["models.common"] = common
     sys.modules["models.yolo"] = yolo
-
-
-def _jet(heat) -> Any:
-    """Aproximación del colormap 'jet' sin depender de OpenCV."""
-
-    import numpy as np
-
-    x = np.clip(heat, 0.0, 1.0) * 4.0
-    red = np.clip(1.5 - np.abs(x - 3.0), 0.0, 1.0)
-    green = np.clip(1.5 - np.abs(x - 2.0), 0.0, 1.0)
-    blue = np.clip(1.5 - np.abs(x - 1.0), 0.0, 1.0)
-    return np.stack([red, green, blue], axis=-1)
-
-
-def _heatmap_to_original(heat, geometry: dict[str, Any], size: tuple[int, int]):
-    """Proyecta el mapa cuadrado del recorte de vuelta al tamaño original."""
-
-    from PIL import Image
-
-    width, height = size
-    mode = geometry.get("mode")
-
-    if mode == "center_crop":
-        scaled_w, scaled_h = geometry["scaled"]
-        left, top = geometry["crop_offset"]
-        canvas = Image.new("L", (scaled_w, scaled_h), 0)
-        canvas.paste(heat, (left, top))
-        return canvas.resize((width, height), Image.BILINEAR)
-
-    if mode == "letterbox":
-        side = geometry["side"]
-        content_w, content_h = geometry["content_size"]
-        offset_x, offset_y = geometry["offset"]
-        square = heat.resize((side, side), Image.BILINEAR)
-        content = square.crop(
-            (offset_x, offset_y, offset_x + content_w, offset_y + content_h)
-        )
-        return content.resize((width, height), Image.BILINEAR)
-
-    return heat.resize((width, height), Image.BILINEAR)
 
 
 class GradCamExplainer:
@@ -277,28 +237,12 @@ class GradCamExplainer:
                 maximum = float(cam.max())
                 if maximum <= 0:
                     raise GradCamError("El mapa de atención está vacío.")
+                reference = max(float(np.percentile(cam, 99)), maximum * 0.4)
                 heat = Image.fromarray(
-                    np.uint8(np.clip(cam / maximum, 0.0, 1.0) * 255.0), mode="L"
+                    np.uint8(np.clip(cam / reference, 0.0, 1.0) * 255.0)
                 )
                 heat = heat.resize((self._input_size, self._input_size), Image.BILINEAR)
-
-                full = _heatmap_to_original(heat, geometry, image.size)
-                original = image.convert("RGB")
-                base = np.asarray(original, dtype=np.float32) / 255.0
-                mask = np.asarray(full, dtype=np.float32) / 255.0
-                # Suaviza la transición y limita la opacidad para no ocultar la IRM.
-                # El umbral evita teñir zonas sin atención real del modelo.
-                mask = np.clip((np.clip(mask, 0.0, 1.0) - 0.15) / 0.85, 0.0, 1.0) ** 0.8
-                color = _jet(mask)
-                alpha = (0.5 * mask)[..., None]
-                blended = base * (1.0 - alpha) + color * alpha
-                overlay = Image.fromarray(
-                    np.uint8(np.clip(blended, 0.0, 1.0) * 255.0), mode="RGB"
-                )
-
-                buffer = io.BytesIO()
-                overlay.save(buffer, format="PNG", optimize=True)
-                return buffer.getvalue()
+                return overlay_png(image, heat, geometry)
             except GradCamError:
                 raise
             except Exception as exc:

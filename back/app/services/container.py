@@ -8,8 +8,8 @@ from app.core.config import BACK_ROOT, Settings
 from app.core.security import SupabaseJWTVerifier, TokenVerifier
 from app.services.analyses import AnalysisRepository, SqliteAnalysisRepository
 from app.services.analyses_pg import PostgresAnalysisRepository
+from app.services.cam import Explainer, OnnxCamExplainer
 from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
-from app.services.gradcam import GradCamExplainer
 from app.services.image_storage import ImageStorage, SupabaseImageStorage
 
 logger = logging.getLogger("nerilum")
@@ -23,7 +23,7 @@ class Services:
     token_verifier: TokenVerifier
     analyses: AnalysisRepository
     image_storage: ImageStorage | None = None
-    explainer: GradCamExplainer | None = None
+    explainer: Explainer | None = None
 
     async def aclose(self) -> None:
         closer = getattr(self.token_verifier, "aclose", None)
@@ -58,22 +58,32 @@ def _build_inference(settings: Settings) -> InferenceStatus:
     )
 
 
-def _resolve_explainer_path(settings: Settings) -> Path | None:
-    """Devuelve el ``.pt`` configurado o el que acompaña a ``MODEL_DIR``."""
-
-    configured = settings.explainer_model_path
-    if configured is not None:
-        path = configured if configured.is_absolute() else BACK_ROOT / configured
-        if path.is_dir():
-            candidates = sorted(path.glob("*.pt"))
-            return candidates[0] if len(candidates) == 1 else None
-        return path if path.is_file() else None
+def _resolve_onnx_path(settings: Settings) -> Path | None:
+    """Devuelve el único ``.onnx`` de ``MODEL_DIR`` (el mismo del clasificador)."""
 
     model_dir = _resolve_model_dir(settings)
     if model_dir is None or not model_dir.is_dir():
         return None
-    candidates = sorted(model_dir.glob("*.pt"))
+    candidates = sorted(model_dir.glob("*.onnx"))
     return candidates[0] if len(candidates) == 1 else None
+
+
+def _build_explainer(settings: Settings) -> Explainer | None:
+    """CAM derivado del mismo ``.onnx`` que usa el clasificador.
+
+    No requiere torch ni checkpoint PyTorch: la activación de la última
+    convolución se añade al grafo en memoria y se pondera con los pesos del
+    clasificador. El ``.pt`` no interviene en ningún momento.
+    """
+
+    onnx_path = _resolve_onnx_path(settings)
+    if onnx_path is None:
+        return None
+    return OnnxCamExplainer(
+        onnx_path,
+        resize_mode=settings.model_resize_mode,
+        input_size=settings.model_input_size,
+    )
 
 
 def create_services(settings: Settings) -> Services:
@@ -103,16 +113,7 @@ def create_services(settings: Settings) -> Services:
                              settings.analysis_images_bucket)
         if settings.supabase_service_role_key else None
     )
-    explainer_path = _resolve_explainer_path(settings)
-    explainer = (
-        GradCamExplainer(
-            explainer_path,
-            resize_mode=settings.model_resize_mode,
-            input_size=settings.model_input_size,
-        )
-        if explainer_path is not None
-        else None
-    )
+    explainer = _build_explainer(settings)
     services = Services(inference=inference, token_verifier=verifier, analyses=analyses,
                         image_storage=image_storage, explainer=explainer)
 
