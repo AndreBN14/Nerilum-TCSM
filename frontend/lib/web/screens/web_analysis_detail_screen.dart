@@ -1,7 +1,10 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/nerilum_theme.dart';
+import '../../presentation/widgets/zoomable_analysis_image.dart';
 import '../../core/utils/score_text.dart';
 import '../../data/datasources/http_analysis_data_source.dart';
 import '../../domain/models/analysis_result.dart';
@@ -153,6 +156,7 @@ class _WebAnalysisDetailScreenState extends State<WebAnalysisDetailScreen> {
                           ? const SizedBox.shrink()
                           : _DetailContent(
                               result: _result!,
+                              analysisSource: widget.analysisSource,
                               onOpenReport: widget.onOpenReport,
                             ),
                     ),
@@ -170,9 +174,10 @@ class _WebAnalysisDetailScreenState extends State<WebAnalysisDetailScreen> {
 // ── Contenido del detalle ────────────────────────────────────────────────────
 
 class _DetailContent extends StatelessWidget {
-  const _DetailContent({required this.result, this.onOpenReport});
+  const _DetailContent({required this.result, this.analysisSource, this.onOpenReport});
 
   final AnalysisResult result;
+  final HttpAnalysisDataSource? analysisSource;
   final VoidCallback? onOpenReport;
 
   @override
@@ -221,6 +226,17 @@ class _DetailContent extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
+
+        // Imagen original + mapa de atención (como en la app móvil)
+        if (result.hasImage || result.hasGradcam) ...[
+          if (analysisSource != null)
+            _AnalysisImages(
+              source: analysisSource!,
+              result: result,
+              colors: colors,
+            ),
+          const SizedBox(height: 12),
+        ],
 
         // Categoría ganadora + indicador demo
         _SurfaceCard(
@@ -343,6 +359,191 @@ class _DetailContent extends StatelessWidget {
         const SizedBox(height: 20),
         const _MedicalNotice(),
       ],
+    );
+  }
+}
+
+// ── Imágenes del análisis ────────────────────────────────────────────────────
+
+/// Descarga y muestra la IRM original y el mapa de atención, replicando el
+/// flujo de la app móvil: `loadImage` / `loadGradcam` del datasource HTTP con
+/// los mismos estados (cargando, error con reintentar, sin imagen).
+class _AnalysisImages extends StatefulWidget {
+  const _AnalysisImages({
+    required this.source,
+    required this.result,
+    required this.colors,
+  });
+
+  final HttpAnalysisDataSource source;
+  final AnalysisResult result;
+  final NerilumPalette colors;
+
+  @override
+  State<_AnalysisImages> createState() => _AnalysisImagesState();
+}
+
+class _AnalysisImagesState extends State<_AnalysisImages> {
+  Uint8List? _imageBytes;
+  Uint8List? _gradcamBytes;
+  String? _imageError;
+  bool _imageLoading = false;
+  bool _gradcamLoading = false;
+  bool _disposed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = widget.result.id;
+    if (widget.result.hasImage && id == null) {
+      _imageError = 'No se puede recuperar la imagen del análisis.';
+      return;
+    }
+    if (id != null) _loadMissing(id);
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  Future<void> _loadMissing(String id) async {
+    if (widget.result.hasImage) await _loadImage(id);
+    if (widget.result.hasGradcam) await _loadGradcam(id);
+  }
+
+  Future<void> _loadImage(String id) async {
+    if (_imageLoading || _imageBytes != null) return;
+    setState(() => _imageLoading = true);
+    try {
+      final bytes = await widget.source.loadImage(id);
+      if (!_disposed) {
+        setState(() {
+          _imageBytes = bytes;
+          _imageError = null;
+        });
+      }
+    } on AnalysisFailure catch (e) {
+      if (!_disposed) setState(() => _imageError = e.message);
+    } catch (_) {
+      if (!_disposed) {
+        setState(() => _imageError =
+            'No se pudo recuperar la imagen. Comprueba tu conexión.');
+      }
+    } finally {
+      if (!_disposed) setState(() => _imageLoading = false);
+    }
+  }
+
+  /// El mapa es prescindible: un 404 (análisis antiguo o sin explicación)
+  /// simplemente oculta la columna del Grad-CAM, igual que en la app móvil.
+  Future<void> _loadGradcam(String id) async {
+    if (_gradcamLoading || _gradcamBytes != null) return;
+    setState(() => _gradcamLoading = true);
+    try {
+      final bytes = await widget.source.loadGradcam(id);
+      if (!_disposed) setState(() => _gradcamBytes = bytes);
+    } catch (_) {
+      // Sin mapa: se muestra solo la IRM original.
+    } finally {
+      if (!_disposed) setState(() => _gradcamLoading = false);
+    }
+  }
+
+  /// Área de la IRM: error con reintentar, cargando o imagen lista.
+  Widget _imageArea() {
+    if (_imageError != null) {
+      return SizedBox(
+        height: 186,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, color: widget.colors.error, size: 28),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                _imageError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: widget.colors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            TextButton.icon(
+              onPressed: () {
+                final id = widget.result.id;
+                if (id != null) _loadImage(id);
+              },
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (_imageLoading || _imageBytes == null) {
+      return const SizedBox(
+        height: 186,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+      );
+    }
+    return ZoomableAnalysisImage(
+      bytes: _imageBytes,
+      label: 'IRM original',
+      zoomName: 'Imagen del análisis',
+      colors: widget.colors,
+    );
+  }
+
+  /// Área del mapa: solo aparece si se pidió y está disponible o cargando.
+  Widget? _gradcamArea() {
+    final requested = widget.result.hasGradcam;
+    if (!requested) return null;
+    if (_gradcamLoading) {
+      return const SizedBox(
+        height: 186,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2.5)),
+      );
+    }
+    if (_gradcamBytes == null) return null; // 404 o error: solo IRM.
+    return ZoomableAnalysisImage(
+      bytes: _gradcamBytes,
+      label: 'Mapa de atención',
+      zoomName: 'Mapa de atención del análisis',
+      colors: widget.colors,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = widget.colors;
+    final gradcamArea = _gradcamArea();
+    return _SurfaceCard(
+      colors: colors,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Imagen del análisis',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _imageArea()),
+              if (gradcamArea != null) ...[
+                const SizedBox(width: 12),
+                Expanded(child: gradcamArea),
+              ],
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
