@@ -68,6 +68,7 @@ class AnalysisOut(BaseModel):
     scores: Scores
     is_demo: bool = False
     has_image: bool = False
+    has_gradcam: bool = False
     model: ModelMetadata
     disclaimer: str = DISCLAIMER
 
@@ -81,6 +82,7 @@ class AnalysisSummary(BaseModel):
     scores: Scores
     is_demo: bool = False
     has_image: bool = False
+    has_gradcam: bool = False
     model_name: str
     model_version: str  # formato "name@version"
     model_dataset: str
@@ -102,9 +104,9 @@ class AnalysisPreview(BaseModel):
     scores: Scores
     model: ModelMetadata
     save_proof: str
-    # PNG (base64) del mapa de explicabilidad (CAM desde el .onnx) de la clase
-    # predicha. Solo se incluye durante la previsualización; no se guarda en la
-    # base ni en el almacenamiento.
+    # PNG (base64) del mapa (CAM desde el .onnx) de la clase predicha. La
+    # previsualización no persiste nada; al confirmar, el backend guarda el PNG
+    # en Storage y lo vincula al análisis (columnas grad_cam_*).
     gradcam_png: str | None = None
     disclaimer: str = DISCLAIMER
 

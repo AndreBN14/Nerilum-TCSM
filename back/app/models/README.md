@@ -75,7 +75,8 @@ memoria la activación de la última convolución como salida extra del grafo y 
 pondera con los pesos de la capa final. No se usa `torch` ni `best.pt`; solo
 `onnx`, que ya viene en `requirements.txt` (~50 MB de RAM adicionales).
 
-El mapa no se guarda en la base ni en Storage: se muestra en la previsualización
-y, en memoria, en el detalle inmediatamente posterior a guardar.
+Al guardar con imagen, el mapa se persiste en el mismo bucket privado con la
+ruta `{account_id}/{analysis_id}-gradcam.png` y las columnas `grad_cam_*`
+(migración `006`). Se recupera con `GET /api/v1/analyses/{id}/gradcam`.
 
 No confundir esta carpeta con tablas o modelos ORM de la base de datos.

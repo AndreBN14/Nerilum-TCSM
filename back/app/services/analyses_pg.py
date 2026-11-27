@@ -96,6 +96,16 @@ class PostgresAnalysisRepository:
         if len(columns) != 3:
             raise RuntimeError("Ejecuta migrations/005_analysis_images.sql antes de habilitar imágenes.")
 
+    def require_gradcam_schema(self) -> None:
+        with self._connect() as conn:
+            columns = conn.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'analyses' "
+                "AND column_name IN ('grad_cam_path', 'grad_cam_sha256', 'grad_cam_mime_type')"
+            ).fetchall()
+        if len(columns) != 3:
+            raise RuntimeError("Ejecuta migrations/006_analysis_grad_cam.sql antes de guardar mapas.")
+
     def list_image_paths(self) -> set[str]:
         with self._connect() as conn:
             return {row["image_path"] for row in conn.execute(
@@ -111,8 +121,9 @@ class PostgresAnalysisRepository:
                             id, account_id, category, probability, scores_json,
                             display_name, is_demo, model_name, model_version,
                             model_dataset, created_at, idempotency_key, request_hash,
-                            image_path, image_sha256, image_mime_type
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            image_path, image_sha256, image_mime_type,
+                            grad_cam_path, grad_cam_sha256, grad_cam_mime_type
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             record.id,
@@ -131,6 +142,9 @@ class PostgresAnalysisRepository:
                             record.image_path,
                             record.image_sha256,
                             record.image_mime_type,
+                            record.grad_cam_path,
+                            record.grad_cam_sha256,
+                            record.grad_cam_mime_type,
                         ),
                     )
                     conn.commit()
@@ -189,6 +203,9 @@ class PostgresAnalysisRepository:
                     image_path=r["image_path"],
                     image_sha256=r["image_sha256"],
                     image_mime_type=r["image_mime_type"],
+                    grad_cam_path=r["grad_cam_path"],
+                    grad_cam_sha256=r["grad_cam_sha256"],
+                    grad_cam_mime_type=r["grad_cam_mime_type"],
                 )
                 items.append(item)
             return items, int(total)
@@ -221,6 +238,9 @@ class PostgresAnalysisRepository:
             image_path=row["image_path"],
             image_sha256=row["image_sha256"],
             image_mime_type=row["image_mime_type"],
+            grad_cam_path=row["grad_cam_path"],
+            grad_cam_sha256=row["grad_cam_sha256"],
+            grad_cam_mime_type=row["grad_cam_mime_type"],
         )
 
     def get_by_idempotency_key(

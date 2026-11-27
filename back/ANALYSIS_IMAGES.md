@@ -18,6 +18,12 @@ pueda contener; la versión adaptada para el PDF no sustituye al original.
    Storage configurado responde 503 y no crea la fila.
 3. `GET /api/v1/analyses/{analysis_id}/image` verifica el JWT y la propiedad de la
    fila, comprueba la huella del objeto y devuelve bytes y MIME con `no-store`.
+4. Si el explicador CAM está disponible, al guardar con imagen se genera el PNG
+   y se sube a `{account_id}/{analysis_id}-gradcam.png` en el mismo bucket. La
+   fila guarda `grad_cam_path`, `grad_cam_sha256` y `grad_cam_mime_type` (las
+   tres juntas o todas en NULL; ver `migrations/006_analysis_grad_cam.sql`).
+   `GET /api/v1/analyses/{analysis_id}/gradcam` aplica la misma verificación que
+   el original. Si el mapa falla, el análisis se guarda igual, sin mapa.
    `GET /analyses` y `/analyses/{id}` añaden `has_image`, sin revelar la ruta.
 
 `POST /analyses/save` JSON sigue admitiendo clientes anteriores y conserva su
@@ -41,7 +47,9 @@ comprobante vencido sin fila obliga a previsualizar y confirmar otra vez.
    `analysis-images`, tipos `image/jpeg`, `image/png` y límite de 11 MiB.
 2. Aplicar `migrations/005_analysis_images.sql` sobre la base PostgreSQL a la
    que apunta `DATABASE_URL`. Es aditiva e idempotente; verificar que sus tres
-   columnas existen antes de cambiar el backend. **No aplicar en otra base**.
+   columnas existen antes de cambiar el backend; aplicar también
+   `migrations/006_analysis_grad_cam.sql` para el mapa de atención. **No aplicar
+   en otra base**.
 3. Desplegar el backend actualizado y configurar en Render
    `SUPABASE_SERVICE_ROLE_KEY` (clave privada del proyecto de Storage) y
    `ANALYSIS_IMAGES_BUCKET=analysis-images`. Mantener `ANALYSIS_PROOF_SECRET`.

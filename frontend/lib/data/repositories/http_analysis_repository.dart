@@ -51,6 +51,9 @@ class HttpAnalysisRepository
   Future<Uint8List> loadImage(String id) => source.loadImage(id);
 
   @override
+  Future<Uint8List> loadGradcam(String id) => source.loadGradcam(id);
+
+  @override
   Future<AnalysisResult?> findById(String id) => source.findById(id);
 }
 

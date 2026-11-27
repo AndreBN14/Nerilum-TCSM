@@ -5,16 +5,20 @@ import '../../domain/usecases/generate_report.dart';
 import '../../domain/usecases/present_report.dart';
 
 class ReportViewModel extends ChangeNotifier {
-  ReportViewModel(this.generateReport, this.presentReport, {this.loadImage});
+  ReportViewModel(this.generateReport, this.presentReport,
+      {this.loadImage, this.loadGradcam});
   final GenerateReport generateReport;
   final PresentReport presentReport;
   final Future<Uint8List> Function(String id)? loadImage;
+  final Future<Uint8List> Function(String id)? loadGradcam;
 
   bool busy = false;
   bool imageLoading = false;
   String? error;
   String? imageError;
+  String? gradcamError;
   Uint8List? imageBytes;
+  Uint8List? gradcamBytes;
   bool _disposed = false;
 
   Future<bool> loadRecordImage(
@@ -54,6 +58,37 @@ class ReportViewModel extends ChangeNotifier {
     }
   }
 
+  /// Recupera el mapa persistido. Los análisis antiguos no lo tienen y
+  /// muestran solo la IRM original, igual que con el mapa en memoria.
+  Future<bool> loadRecordGradcam(
+    AnalysisResult result, {
+    Uint8List? cached,
+  }) async {
+    if (cached != null) {
+      gradcamBytes = cached;
+      gradcamError = null;
+      notifyListeners();
+      return true;
+    }
+    if (!result.hasGradcam) return true;
+    if (result.id == null || loadGradcam == null) return false;
+    if (gradcamBytes != null) return true;
+    try {
+      final downloaded = await loadGradcam!(result.id!);
+      if (_disposed) return false;
+      gradcamBytes = downloaded;
+      gradcamError = null;
+      notifyListeners();
+      return true;
+    } catch (_) {
+      if (!_disposed) {
+        gradcamError = 'No se pudo recuperar el mapa de atención.';
+        notifyListeners();
+      }
+      return false;
+    }
+  }
+
   Future<bool> export(
     AnalysisResult result, {
     Uint8List? imageBytes,
@@ -75,7 +110,7 @@ class ReportViewModel extends ChangeNotifier {
       final bytes = await generateReport(
         result,
         imageBytes: imageBytes ?? this.imageBytes,
-        gradcamBytes: gradcamBytes,
+        gradcamBytes: gradcamBytes ?? this.gradcamBytes,
       );
       if (_disposed) return false;
       final rawName = result.displayName ?? 'analisis_nerilum';

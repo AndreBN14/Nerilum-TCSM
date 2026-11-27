@@ -175,6 +175,7 @@ class AppDependencies {
     GenerateReport(const PdfReportRepository()),
     PresentReport(const PrintingReportOutputRepository()),
     loadImage: analysisImageRepository?.loadImage,
+    loadGradcam: analysisImageRepository?.loadGradcam,
   );
 
   void dispose() {
