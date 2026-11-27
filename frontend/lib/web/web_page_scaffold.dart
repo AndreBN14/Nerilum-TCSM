@@ -20,6 +20,7 @@ class WebPageScaffold extends StatelessWidget {
     this.onEmptyAction,
     this.errorMessage = 'No pudimos cargar la información. Revisa tu conexión.',
     this.actions,
+    this.toolbar,
   });
 
   final String title;
@@ -33,6 +34,11 @@ class WebPageScaffold extends StatelessWidget {
   final VoidCallback? onEmptyAction;
   final String errorMessage;
   final List<Widget>? actions;
+
+  /// Barra opcional (p. ej. filtros) visible en TODOS los estados, incluidos
+  /// vacío y error. Permite seguir manipulando los filtros cuando la lista
+  /// no tiene resultados.
+  final Widget? toolbar;
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +67,10 @@ class WebPageScaffold extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Divider(color: colors.border, height: 24),
+              if (toolbar != null) ...[
+                toolbar!,
+                const SizedBox(height: 20),
+              ],
               Expanded(
                 child: WebViewStateBox(
                   status: status,
