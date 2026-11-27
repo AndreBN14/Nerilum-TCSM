@@ -238,9 +238,12 @@ threadpool para mantener disponible el event loop durante las operaciones síncr
   las activaciones de la última convolución del `.onnx`, ponderadas por los
   pesos del clasificador. No usa torch ni `best.pt`; solo `onnx`, incluido en
   `requirements.txt` (~50 MB de RAM adicionales). `POST /analyses/preview`
-  devuelve el PNG en base64 de la clase predicha. El mapa no se guarda en la
-  base ni en Storage: solo se muestra en la previsualización y, en memoria, en
-  el detalle inmediatamente posterior a guardar.
+  devuelve el PNG en base64 de la clase predicha. Al confirmar el guardado con
+  imagen, el backend persiste el PNG en el bucket privado
+  (`{account_id}/{analysis_id}-gradcam.png`) y escribe `grad_cam_path`,
+  `grad_cam_sha256` y `grad_cam_mime_type` (migración `006`). Se recupera con
+  `GET /api/v1/analyses/{id}/gradcam` y aparece también tras reiniciar la app y
+  en el PDF. Los análisis guardados sin imagen no tienen mapa.
 - `SEED_DEMO` (solo `APP_ENV=development`), con `SEED_DEMO_ACCOUNT_ID`, crea
   registros demo idempotentes marcados `is_demo=true`. La API nunca genera
   análisis marcados como demo.

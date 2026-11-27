@@ -123,8 +123,8 @@ class MainViewModel extends ChangeNotifier {
     }
   }
 
-  /// El Grad-CAM no se persiste: se conserva solo en memoria para el detalle
-  /// inmediatamente posterior a guardar el análisis.
+  /// El mapa también se persiste en el backend; esta copia en memoria solo
+  /// evita una descarga en el detalle inmediatamente posterior a guardar.
   void _rememberGradcam(String? id) {
     final bytes = preview?.gradcam;
     if (id == null || bytes == null) return;

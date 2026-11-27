@@ -103,6 +103,33 @@ void main() {
     },
   );
 
+  test('Reabre un análisis y recupera el mapa persistido antes del PDF', () async {
+    final pdf = _Pdf();
+    var calls = 0;
+    final model = ReportViewModel(
+      GenerateReport(pdf),
+      PresentReport(_Output()),
+      loadGradcam: (id) async {
+        expect(id, 'an_abc123');
+        calls++;
+        return Uint8List.fromList([10, 11, 12]);
+      },
+    );
+    addTearDown(model.dispose);
+    final record = AnalysisResult(
+      id: 'an_abc123',
+      category: 'NonDemented',
+      createdAt: DateTime.utc(2026),
+      hasGradcam: true,
+    );
+
+    expect(await model.loadRecordGradcam(record), isTrue);
+    expect(model.gradcamBytes, [10, 11, 12]);
+    expect(await model.export(record), isTrue);
+    expect(pdf.lastGradcam, [10, 11, 12]);
+    expect(calls, 1);
+  });
+
   test('El PDF recibe también el Grad-CAM cuando está disponible', () async {
     final pdf = _Pdf();
     final model = ReportViewModel(

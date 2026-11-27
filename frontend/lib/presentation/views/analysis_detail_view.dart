@@ -30,7 +30,7 @@ class AnalysisDetailView extends StatelessWidget {
 
   final AnalysisResult result;
   final Uint8List? imageBytes;
-  /// Grad-CAM solo disponible en memoria tras guardar; nunca se persiste.
+  /// Mapa en memoria tras guardar; si falta, se descarga del backend.
   final Uint8List? gradcamBytes;
   final VoidCallback onBack;
   final VoidCallback? onExport;

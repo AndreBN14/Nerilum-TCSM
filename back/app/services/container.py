@@ -105,6 +105,7 @@ def create_services(settings: Settings) -> Services:
         analyses = PostgresAnalysisRepository(settings.database_url)
         if settings.supabase_service_role_key:
             analyses.require_image_schema()
+            analyses.require_gradcam_schema()
     else:
         analyses = SqliteAnalysisRepository(settings.database_path)
 

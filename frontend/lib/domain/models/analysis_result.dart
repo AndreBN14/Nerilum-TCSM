@@ -11,6 +11,7 @@ class AnalysisResult {
     this.modelVersion,
     this.modelDataset,
     this.hasImage = false,
+    this.hasGradcam = false,
   });
 
   // La categoría debe corresponder exactamente a la etiqueta del modelo.
@@ -27,4 +28,5 @@ class AnalysisResult {
   final String? modelVersion;
   final String? modelDataset;
   final bool hasImage;
+  final bool hasGradcam;
 }

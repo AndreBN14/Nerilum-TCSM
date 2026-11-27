@@ -14,7 +14,7 @@ class AnalysisPreview {
   final String saveProof;
   final DateTime expiresAt;
 
-  /// PNG del Grad-CAM generado durante la previsualización. No se persiste:
-  /// solo vive en memoria para la pantalla de resultado y el detalle inmediato.
+  /// PNG del mapa generado durante la previsualización. Al confirmar el
+  /// guardado, el backend lo persiste y puede descargarse después.
   final Uint8List? gradcam;
 }

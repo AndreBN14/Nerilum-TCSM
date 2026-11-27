@@ -325,3 +325,41 @@ def test_preview_survives_gradcam_failure(stub, keypair):
     assert data["gradcam_png"] is None
     assert data["category"] == "NonDemented"
 
+
+def test_gradcam_is_persisted_and_served_after_save(stub, keypair):
+    storage = MemoryStorage()
+    explainer = FakeExplainer()
+    with TestClient(_app(stub, storage=storage, explainer=explainer)) as client:
+        headers = _headers(keypair)
+        proof = _preview(client, headers).json()["save_proof"]
+        saved = client.post(
+            "/api/v1/analyses/save-with-image",
+            headers=headers,
+            data={"save_proof": proof, "display_name": "Con mapa"},
+            files={"file": ("scan.png", _png(), "image/png")},
+        )
+        assert saved.status_code == 201
+        payload = saved.json()
+        assert payload["has_gradcam"] is True
+
+        downloaded = client.get(
+            f"/api/v1/analyses/{payload['id']}/gradcam", headers=headers
+        )
+    assert downloaded.status_code == 200
+    assert downloaded.content == explainer.png
+    assert downloaded.headers["cache-control"] == "private, no-store"
+    assert any(path.endswith("-gradcam.png") for path in storage.objects)
+
+
+def test_gradcam_endpoint_404_when_analysis_has_no_map(stub, keypair):
+    with TestClient(_app(stub)) as client:
+        headers = _headers(keypair)
+        proof = _preview(client, headers).json()["save_proof"]
+        saved = _save(client, headers, proof)
+        assert saved.status_code == 201
+        assert saved.json()["has_gradcam"] is False
+        response = client.get(
+            f"/api/v1/analyses/{saved.json()['id']}/gradcam", headers=headers
+        )
+    assert response.status_code == 404
+

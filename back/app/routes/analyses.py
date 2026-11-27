@@ -103,6 +103,7 @@ def _to_out(record: AnalysisRecord) -> AnalysisOut:
             scores=scores,
             is_demo=record.is_demo,
             has_image=record.image_path is not None,
+            has_gradcam=record.grad_cam_path is not None,
             model=ModelMetadata(
                 name=record.model_name,
                 version=record.model_version,
@@ -144,6 +145,7 @@ def _summary_from_record(record: AnalysisRecord) -> AnalysisSummary:
         scores=scores,
         is_demo=record.is_demo,
         has_image=record.image_path is not None,
+        has_gradcam=record.grad_cam_path is not None,
         model_name=record.model_name,
         model_version=f"{record.model_name}@{record.model_version}",
         model_dataset=record.model_dataset,
@@ -185,15 +187,13 @@ async def _predict(data: bytes, services: Services, settings: Settings
     return prediction, model, image
 
 
-async def _gradcam_base64(
+async def _gradcam_bytes(
     services: Services, image: object, prediction: AnalysisPrediction
-) -> str | None:
-    """Genera el mapa de explicabilidad (Grad-CAM o CAM) si está disponible.
+) -> bytes | None:
+    """Genera el PNG del mapa de atención (CAM desde el ``.onnx``).
 
-    El mapa se deriva siempre del ``.onnx`` de clasificación (CAM), sin
-    ``torch`` ni ``best.pt``. Un fallo del explicador nunca tumba la
-    clasificación: se registra el tipo de error (sin datos de la imagen) y la
-    respuesta viaja con ``gradcam_png=None``.
+    Un fallo del explicador nunca tumba la clasificación: se registra solo el
+    tipo de error (sin datos de la imagen) y la operación continúa sin mapa.
     """
 
     explainer = services.explainer
@@ -203,11 +203,49 @@ async def _gradcam_base64(
     try:
         # El orden de ``classes`` es el orden de salida del clasificador.
         index = info.classes.index(prediction.category.value)
-        png = await run_in_threadpool(explainer.render, image, index)
-        return base64.b64encode(png).decode("ascii")
+        return await run_in_threadpool(explainer.render, image, index)
     except Exception as exc:
-        logger.warning("Grad-CAM no disponible (error=%s)", type(exc).__name__)
+        logger.warning("Mapa de atención no disponible (error=%s)", type(exc).__name__)
         return None
+
+
+async def _gradcam_base64(
+    services: Services, image: object, prediction: AnalysisPrediction
+) -> str | None:
+    """PNG del mapa en base64 para la previsualización (no se persiste aquí)."""
+
+    png = await _gradcam_bytes(services, image, prediction)
+    return base64.b64encode(png).decode("ascii") if png is not None else None
+
+
+async def _store_gradcam(
+    services: Services,
+    image: object,
+    prediction: AnalysisPrediction,
+    *,
+    account_id: str,
+    operation_id: str,
+) -> tuple[str | None, str | None, str | None]:
+    """Guarda el mapa en el bucket privado y devuelve los 3 campos de la fila.
+
+    Devuelve ``(None, None, None)`` si no hay explicador o falla el almacenamiento;
+    el análisis se guarda igual, sin mapa. El constraint de PostgreSQL exige que
+    las tres columnas se rellenen juntas o queden todas en NULL.
+    """
+
+    png = await _gradcam_bytes(services, image, prediction)
+    if png is None or services.image_storage is None:
+        return None, None, None
+    path = f"{account_id}/{operation_id}-gradcam.png"
+    digest = hashlib.sha256(png).hexdigest()
+    try:
+        await run_in_threadpool(services.image_storage.put, path, png, "image/png")
+    except Exception as exc:
+        logger.warning(
+            "No se pudo guardar el mapa de atención (error=%s)", type(exc).__name__
+        )
+        return None, None, None
+    return path, digest, "image/png"
 
 
 @router.post("", response_model=AnalysisOut, status_code=201, responses={
@@ -242,7 +280,7 @@ async def create_analysis(
         if previous is not None:
             # Recuperar una operación completada incluso si el modelo ahora no está disponible.
             return _to_out(previous)
-    prediction, model_info, _image = await _predict(data, services, settings)
+    prediction, model_info, image = await _predict(data, services, settings)
 
     record = AnalysisRecord(
         account_id=str(user.id),
@@ -264,6 +302,12 @@ async def create_analysis(
         record.image_mime_type = mime
         record.fixed_id = True
         await run_in_threadpool(services.image_storage.put, record.image_path, data, mime)
+        (record.grad_cam_path, record.grad_cam_sha256, record.grad_cam_mime_type) = (
+            await _store_gradcam(
+                services, image, prediction,
+                account_id=str(user.id), operation_id=record.id,
+            )
+        )
     # Validar también el registro completo antes de cualquier INSERT.
     _to_out(record)
     persisted = await run_in_threadpool(services.analyses.create, record)
@@ -375,15 +419,23 @@ async def save_analysis_with_image(
         return _to_out(existing)
     if datetime.now(timezone.utc) > receipt["expiration"]:
         raise ApiException(422, "validation_error", "La previsualización expiró. Analiza la imagen de nuevo.")
-    await run_in_threadpool(validate_image, data, max_bytes=settings.max_image_bytes,
-                            max_dimension=settings.max_image_dimension,
-                            max_pixels=settings.max_image_pixels)
+    image = await run_in_threadpool(
+        validate_image, data, max_bytes=settings.max_image_bytes,
+        max_dimension=settings.max_image_dimension,
+        max_pixels=settings.max_image_pixels,
+    )
     mime = "image/jpeg" if data.startswith(JPEG_MAGIC) else "image/png"
     extension = "jpg" if mime == "image/jpeg" else "png"
     path = f"{user.id}/{operation_id}.{extension}"
     await run_in_threadpool(services.image_storage.put, path, data, mime)
     prediction = receipt["prediction"]
     model = receipt["model_info"]
+    (
+        grad_cam_path, grad_cam_sha256, grad_cam_mime_type
+    ) = await _store_gradcam(
+        services, image, prediction,
+        account_id=str(user.id), operation_id=operation_id,
+    )
     record = AnalysisRecord(
         id=operation_id, account_id=str(user.id), category=prediction.category.value,
         probability=prediction.probability, scores=prediction.scores.model_dump(),
@@ -391,6 +443,8 @@ async def save_analysis_with_image(
         model_name=model.name, model_version=model.version, model_dataset=model.dataset,
         idempotency_key=operation_id, request_hash=request_hash, fixed_id=True,
         image_path=path, image_sha256=digest, image_mime_type=mime,
+        grad_cam_path=grad_cam_path, grad_cam_sha256=grad_cam_sha256,
+        grad_cam_mime_type=grad_cam_mime_type,
     )
     _to_out(record)
     saved = await run_in_threadpool(services.analyses.create, record)
@@ -414,6 +468,26 @@ async def get_analysis_image(
     if hashlib.sha256(content).hexdigest() != record.image_sha256:
         raise ApiException(503, "storage_unavailable", "La imagen almacenada no coincide con el análisis.")
     return Response(content=content, media_type=record.image_mime_type,
+                    headers={"Cache-Control": "private, no-store"})
+
+
+@router.get("/{analysis_id}/gradcam", responses=COMMON_ERRORS)
+async def get_analysis_gradcam(
+    analysis_id: str,
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
+    services: Annotated[Services, Depends(get_services)],
+) -> Response:
+    """Mapa de atención persistido, con la misma verificación que la original."""
+
+    record = await run_in_threadpool(services.analyses.get_by_account, analysis_id, str(user.id))
+    if record is None or record.grad_cam_path is None:
+        raise ApiException(404, "not_found", "Mapa de atención no encontrado.")
+    if services.image_storage is None:
+        raise ApiException(503, "storage_unavailable", "El almacenamiento de imágenes no está disponible.")
+    content = await run_in_threadpool(services.image_storage.get, record.grad_cam_path)
+    if hashlib.sha256(content).hexdigest() != record.grad_cam_sha256:
+        raise ApiException(503, "storage_unavailable", "El mapa almacenado no coincide con el análisis.")
+    return Response(content=content, media_type=record.grad_cam_mime_type,
                     headers={"Cache-Control": "private, no-store"})
 
 

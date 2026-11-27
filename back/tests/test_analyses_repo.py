@@ -117,3 +117,33 @@ def test_legacy_microsecond_created_at_is_normalized_on_read(tmp_path) -> None:
 
     assert stored is not None
     assert stored.created_at == "2026-10-12T10:00:00Z"
+
+
+def test_gradcam_fields_round_trip(tmp_path) -> None:
+    repo = SqliteAnalysisRepository(tmp_path / "n.db")
+    record = _record()
+    record.grad_cam_path = "a/an_fijo-gradcam.png"
+    record.grad_cam_sha256 = "0" * 64
+    record.grad_cam_mime_type = "image/png"
+    repo.create(record)
+
+    stored = repo.get_by_account("an_fijo", "a")
+
+    assert stored is not None
+    assert stored.grad_cam_path == "a/an_fijo-gradcam.png"
+    assert stored.grad_cam_sha256 == "0" * 64
+    assert stored.grad_cam_mime_type == "image/png"
+
+
+def test_gradcam_fields_must_be_all_or_none(tmp_path) -> None:
+    with pytest.raises(ValueError):
+        AnalysisRecord(
+            account_id="a",
+            category="NonDemented",
+            probability=0.9,
+            scores={"NonDemented": 0.9},
+            model_name="yolov5-cls",
+            model_version="v1.0",
+            model_dataset="ADNI",
+            grad_cam_path="a/an_fijo-gradcam.png",
+        )

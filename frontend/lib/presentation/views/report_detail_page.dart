@@ -35,6 +35,9 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
       unawaited(
         _report!.loadRecordImage(widget.result, cached: widget.imageBytes),
       );
+      unawaited(
+        _report!.loadRecordGradcam(widget.result, cached: widget.gradcamBytes),
+      );
     }
   }
 
@@ -48,7 +51,7 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     final success = await _report!.export(
       widget.result,
       imageBytes: _report!.imageBytes,
-      gradcamBytes: widget.gradcamBytes,
+      gradcamBytes: widget.gradcamBytes ?? _report!.gradcamBytes,
       share: share,
     );
     if (!mounted) return;
@@ -64,7 +67,7 @@ class _ReportDetailPageState extends State<ReportDetailPage> {
     builder: (context, _) => AnalysisDetailView(
       result: widget.result,
       imageBytes: _report!.imageBytes,
-      gradcamBytes: widget.gradcamBytes,
+      gradcamBytes: widget.gradcamBytes ?? _report!.gradcamBytes,
       imageLoading: _report!.imageLoading,
       imageError: _report!.imageError,
       onRetryImage: _report!.imageError != null

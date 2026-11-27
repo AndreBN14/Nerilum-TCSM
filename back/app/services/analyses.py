@@ -73,11 +73,20 @@ class AnalysisRecord:
     image_path: str | None = None
     image_sha256: str | None = None
     image_mime_type: str | None = None
+    grad_cam_path: str | None = None
+    grad_cam_sha256: str | None = None
+    grad_cam_mime_type: str | None = None
     fixed_id: bool = False  # Comprobante firmado: el ID no cambia por reintentos.
 
     def __post_init__(self) -> None:
         if (self.idempotency_key is None) != (self.request_hash is None):
             raise ValueError("La clave de idempotencia y la huella deben existir juntas.")
+        cam = (self.grad_cam_path, self.grad_cam_sha256, self.grad_cam_mime_type)
+        # Coincide con el constraint analyses_grad_cam_fields de PostgreSQL.
+        if any(value is not None for value in cam) and not all(
+            value is not None for value in cam
+        ):
+            raise ValueError("Las tres columnas del mapa de atención deben existir juntas.")
 
     @staticmethod
     def from_row(row: sqlite3.Row) -> "AnalysisRecord":
@@ -98,6 +107,9 @@ class AnalysisRecord:
             image_path=row["image_path"],
             image_sha256=row["image_sha256"],
             image_mime_type=row["image_mime_type"],
+            grad_cam_path=row["grad_cam_path"],
+            grad_cam_sha256=row["grad_cam_sha256"],
+            grad_cam_mime_type=row["grad_cam_mime_type"],
         )
 
 
@@ -112,6 +124,8 @@ class AnalysisRepository(Protocol):
         self, account_id: str, key: str, request_hash: str
     ) -> AnalysisRecord | None: ...
     def ensure_schema(self) -> None: ...
+    def require_image_schema(self) -> None: ...
+    def require_gradcam_schema(self) -> None: ...
     def seed_demo(self, account_id: str, model_info: ModelInfo) -> int: ...
     def close(self) -> None: ...
     def list_image_paths(self) -> set[str]: ...
@@ -136,6 +150,14 @@ class SqliteAnalysisRepository:
             return {row[0] for row in conn.execute(
                 "SELECT image_path FROM analyses WHERE image_path IS NOT NULL")}
 
+    def require_image_schema(self) -> None:
+        # SQLite ya crea/Añade las columnas en ensure_schema().
+        return None
+
+    def require_gradcam_schema(self) -> None:
+        # SQLite ya crea/Añade las columnas en ensure_schema().
+        return None
+
     def ensure_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(
@@ -154,9 +176,12 @@ class SqliteAnalysisRepository:
                     created_at    TEXT NOT NULL,
                     idempotency_key TEXT,
                     request_hash    TEXT,
-                    image_path      TEXT,
-                    image_sha256    TEXT,
-                    image_mime_type TEXT
+                    image_path         TEXT,
+                    image_sha256       TEXT,
+                    image_mime_type    TEXT,
+                    grad_cam_path      TEXT,
+                    grad_cam_sha256    TEXT,
+                    grad_cam_mime_type TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_analyses_account_created
                     ON analyses (account_id, created_at DESC);
@@ -165,7 +190,11 @@ class SqliteAnalysisRepository:
             # Actualización aditiva de SQLite local: preservar el historial existente.
             conn.execute("BEGIN IMMEDIATE")
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(analyses)")}
-            for column in ("idempotency_key", "request_hash", "image_path", "image_sha256", "image_mime_type"):
+            for column in (
+                "idempotency_key", "request_hash", "image_path", "image_sha256",
+                "image_mime_type", "grad_cam_path", "grad_cam_sha256",
+                "grad_cam_mime_type",
+            ):
                 if column not in columns:
                     conn.execute(f"ALTER TABLE analyses ADD COLUMN {column} TEXT")
             conn.execute(
@@ -183,8 +212,9 @@ class SqliteAnalysisRepository:
                             id, account_id, category, probability, scores_json,
                             display_name, is_demo, model_name, model_version,
                             model_dataset, created_at, idempotency_key, request_hash,
-                            image_path, image_sha256, image_mime_type
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            image_path, image_sha256, image_mime_type,
+                            grad_cam_path, grad_cam_sha256, grad_cam_mime_type
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
                         (
                             record.id,
@@ -203,6 +233,9 @@ class SqliteAnalysisRepository:
                             record.image_path,
                             record.image_sha256,
                             record.image_mime_type,
+                            record.grad_cam_path,
+                            record.grad_cam_sha256,
+                            record.grad_cam_mime_type,
                         ),
                     )
                     break

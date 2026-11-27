@@ -36,7 +36,9 @@ Las rutas nuevas usan el mismo JWT de Supabase que el resto de la API.
 
 `gradcam_png` aparece si el explicador CAM está disponible: se deriva del
 propio `.onnx` (sin `torch` ni `best.pt`). Si falla, viaja como `null` y la
-clasificación sigue siendo válida. No se guarda en la base ni en Storage.
+clasificación sigue siendo válida. La previsualización no persiste nada; al
+confirmar con imagen, el backend guarda el PNG en Storage y lo vincula al
+análisis con las columnas `grad_cam_*` (migración `006`).
 
 `scores`/`category` se validan antes de firmar. El comprobante contiene el UUID
 del usuario autenticado, `preview_id`, fecha de inferencia, categoría,

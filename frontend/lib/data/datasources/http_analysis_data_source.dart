@@ -282,6 +282,61 @@ class HttpAnalysisDataSource {
     return bytes;
   }
 
+  /// Descarga el mapa de atención persistido. Un 404 es normal en análisis
+  /// guardados antes de la persistencia o sin explicación disponible.
+  Future<Uint8List> loadGradcam(String id) async {
+    if (!RegExp(r'^an_[a-f0-9]+$').hasMatch(id)) {
+      throw const AnalysisFailure('Identificador de análisis inválido.');
+    }
+    String? token;
+    try {
+      token = await accessToken();
+    } on AnalysisNetworkFailure {
+      rethrow;
+    } catch (_) {
+      throw const AnalysisFailure(
+        'No se pudo recuperar la sesión. Vuelve a iniciar sesión.',
+      );
+    }
+    if (token == null || token.isEmpty) {
+      throw const AnalysisFailure('Inicia sesión para acceder al backend.');
+    }
+    http.Response response;
+    try {
+      response = await _client
+          .get(
+            baseUri.resolve('analyses/$id/gradcam'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(timeout);
+    } on TimeoutException {
+      throw const AnalysisNetworkFailure(
+        'El mapa tardó demasiado en descargarse.',
+      );
+    } on http.ClientException {
+      throw const AnalysisNetworkFailure('No se pudo descargar el mapa.');
+    }
+    if (response.statusCode != 200) {
+      throw AnalysisFailure(
+        response.statusCode == 404
+            ? 'Este análisis no tiene mapa de atención.'
+            : 'No se pudo descargar el mapa del análisis.',
+      );
+    }
+    final bytes = response.bodyBytes;
+    final mime = response.headers['content-type']?.split(';').first.trim();
+    final png =
+        bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4e &&
+        bytes[3] == 0x47;
+    if (bytes.length > 10 * 1024 * 1024 || mime != 'image/png' || !png) {
+      throw const AnalysisFailure('El mapa descargado no es válido.');
+    }
+    return bytes;
+  }
+
   Future<List<AnalysisResult>> history() async {
     // El contrato de dominio actual trabaja con una lista completa. Recorrer
     // todas las páginas evita ordenar solo una fracción del historial en la UI.
