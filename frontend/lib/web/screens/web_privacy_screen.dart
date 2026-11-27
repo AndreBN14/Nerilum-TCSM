@@ -1,26 +1,37 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/nerilum_theme.dart';
+import '../../core/utils/category_label.dart';
+import '../../data/datasources/http_analysis_data_source.dart';
+import '../../domain/repositories/analysis_repository.dart';
 import '../states/web_view_states.dart';
 import '../web_page_scaffold.dart';
 import '../widgets/web_dialogs.dart';
+import '../widgets/web_download.dart';
 
 /// Vista Privacidad del portal web.
 ///
 /// Muestra: exportar mis datos y eliminar mi cuenta.
 ///
 /// Estado de los endpoints (sección 5 del diseño):
-///   - GET  /api/v1/me/export  — NO implementado aún en el backend.
-///   - DELETE /api/v1/me       — NO implementado aún en el backend.
+///   - Exportar datos: NO requiere backend; usa GET /api/v1/analyses
+///     (existente) + la identidad de Supabase, y descarga un JSON en el
+///     navegador.
+///   - DELETE /api/v1/me — NO implementado aún en el backend.
 ///
-/// Las acciones muestran un aviso honesto de "pendiente de implementación"
-/// en lugar de simular un éxito. Cuando el backend los implemente, solo hay
-/// que sustituir el cuerpo de [_exportData] y [_deleteAccount].
+/// La eliminación de cuenta sigue mostrando un aviso honesto de "pendiente
+/// de implementación". Cuando el backend la implemente, solo hay que
+/// sustituir el cuerpo de [_deleteAccount].
 class WebPrivacyScreen extends StatefulWidget {
-  const WebPrivacyScreen({super.key, required this.user});
+  const WebPrivacyScreen({super.key, required this.user, this.analysisSource});
 
   final User user;
+
+  // null cuando API_BASE_URL no está configurada.
+  final HttpAnalysisDataSource? analysisSource;
 
   @override
   State<WebPrivacyScreen> createState() => _WebPrivacyScreenState();
@@ -29,28 +40,103 @@ class WebPrivacyScreen extends StatefulWidget {
 class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
   String? _error;
   String? _info;
+  bool _exporting = false;
 
   // ── Exportar datos ─────────────────────────────────────────────────────────
-  //
-  // Cuando el backend implemente GET /api/v1/me/export, reemplaza este cuerpo:
-  //
-  //   final source = ... // HttpAnalysisDataSource u otro cliente HTTP
-  //   final bytes = await source.exportMyData(); // método por añadir
-  //   // Abrir descarga en el navegador con el paquete `universal_html` o similar
-  //
+
   Future<void> _exportData() async {
+    if (_exporting) return;
     setState(() {
+      _exporting = true;
       _error = null;
       _info = null;
     });
+    try {
+      final source = widget.analysisSource;
+      if (source == null) {
+        throw const AnalysisFailure(
+          'El backend de análisis no está configurado. '
+          'Define API_BASE_URL al ejecutar la app.',
+        );
+      }
 
-    // El endpoint GET /api/v1/me/export todavía no existe en el backend.
-    // Mientras no esté implementado, informamos al usuario con honestidad.
-    setState(() {
-      _info =
-          'La exportación de datos aún no está disponible. El endpoint del '
-          'backend (GET /api/v1/me/export) está pendiente de implementación.';
-    });
+      // Nombre de perfil: profiles con respaldo en el metadata del token.
+      String? nombre;
+      try {
+        final row = await Supabase.instance.client
+            .from('profiles')
+            .select('display_name')
+            .eq('id', widget.user.id)
+            .maybeSingle();
+        nombre = row?['display_name'] as String?;
+      } catch (_) {
+        // Sin acceso a profiles seguimos exportando lo demás.
+      }
+      nombre ??= widget.user.userMetadata?['display_name'] as String?;
+
+      // Historial completo: GET /api/v1/analyses (pagina todo el backend).
+      final history = await source.history();
+
+      final u = widget.user;
+      final data = <String, dynamic>{
+        'exportado': DateTime.now().toIso8601String(),
+        'cuenta': {
+          'id': u.id,
+          'email': u.email,
+          'nombre': nombre,
+          'creado_el': u.createdAt,
+        },
+        'resumen': {'total_analisis': history.length},
+        'notas':
+            'Las imágenes de los análisis se almacenan en Supabase Storage '
+            '(bucket privado) y se descargan individualmente desde el '
+            'detalle de cada análisis. Este archivo no incluye su contenido '
+            'binario.',
+        'analises': [
+          for (final r in history)
+            <String, dynamic>{
+              'id': r.id,
+              'fecha': r.createdAt.toIso8601String(),
+              'nombre': r.displayName,
+              'categoria': r.category,
+              'categoria_es': categoryLabel(r.category),
+              'probabilidad': r.probability,
+              'puntuaciones': r.scores,
+              'modelo': r.modelName,
+              'version_modelo': r.modelVersion,
+              'dataset_modelo': r.modelDataset,
+              'tiene_imagen': r.hasImage,
+              'tiene_mapa_atencion': r.hasGradcam,
+              'es_demo': r.isDemo,
+            },
+        ],
+      };
+
+      final json = const JsonEncoder.withIndent('  ').convert(data);
+      final now = DateTime.now();
+      final date = '${now.year}-${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+      downloadFile(
+        filename: 'mis-datos-nerilum-$date.json',
+        bytes: utf8.encode(json),
+        mime: 'application/json',
+      );
+      if (!mounted) return;
+      setState(() {
+        _info =
+            'Exportación lista: ${history.length} análisis descargados '
+            'como mis-datos-nerilum-$date.json.';
+      });
+    } on AnalysisFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() =>
+          _error = 'No se pudo generar la exportación. Inténtalo de nuevo.');
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   // ── Eliminar cuenta ────────────────────────────────────────────────────────
@@ -117,8 +203,9 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
             icon: Icons.shield_outlined,
             text:
                 'Supabase Auth gestiona tu identidad y sesión. El backend '
-                'Nerilum almacena únicamente tus análisis y el nombre de '
-                'perfil. Las imágenes nunca se guardan en el servidor.',
+                'Nerilum almacena tus análisis en Postgres y sus imágenes '
+                'en un bucket privado de Supabase Storage, accesibles solo '
+                'con tu sesión.',
             colors: colors,
           ),
           const SizedBox(height: 20),
@@ -128,12 +215,12 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
             icon: Icons.download_outlined,
             title: 'Exportar mis datos',
             description:
-                'Descarga una copia de tus análisis y datos de perfil. '
-                'Pendiente de implementación en el backend.',
-            actionLabel: 'Exportar datos',
+                'Descarga una copia de tus análisis y datos de perfil en '
+                'formato JSON, legible por cualquier herramienta.',
+            actionLabel: 'Descargar JSON',
             actionIcon: Icons.file_download_outlined,
-            onAction: _exportData,
-            pendingNote: true,
+            onAction: _exporting ? () {} : _exportData,
+            busy: _exporting,
             colors: colors,
           ),
           const SizedBox(height: 16),
@@ -200,6 +287,7 @@ class _PrivacyAction extends StatelessWidget {
     required this.colors,
     this.destructive = false,
     this.pendingNote = false,
+    this.busy = false,
   });
 
   final IconData icon;
@@ -211,6 +299,10 @@ class _PrivacyAction extends StatelessWidget {
   final NerilumPalette colors;
   final bool destructive;
   final bool pendingNote;
+
+  /// true mientras la acción está en curso: el botón queda deshabilitado
+  /// y muestra un spinner.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -270,8 +362,14 @@ class _PrivacyAction extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 TextButton.icon(
-                  onPressed: onAction,
-                  icon: Icon(actionIcon, size: 18),
+                  onPressed: busy ? null : onAction,
+                  icon: busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        )
+                      : Icon(actionIcon, size: 18),
                   label: Text(actionLabel),
                   style: TextButton.styleFrom(foregroundColor: accent),
                 ),
