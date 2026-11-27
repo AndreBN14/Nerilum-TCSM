@@ -377,8 +377,8 @@ class _ImagePreviewCard extends StatelessWidget {
                     Expanded(
                       child: ZoomableAnalysisImage(
                         bytes: gradcamBytes,
-                        label: 'Grad-CAM',
-                        zoomName: 'Grad-CAM',
+                        label: 'Mapa de atención',
+                        zoomName: 'Mapa de atención',
                         colors: colors,
                       ),
                     ),
@@ -386,9 +386,9 @@ class _ImagePreviewCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'El Grad-CAM muestra las regiones que más influyeron en la '
-                  'predicción. No identifica lesiones ni sustituye una '
-                  'valoración médica.',
+                  'El mapa de atención muestra en qué zonas se fijó más el '
+                  'sistema. No identifica lesiones ni sustituye una valoración '
+                  'médica.',
                   style: TextStyle(color: colors.textSecondary, fontSize: 11),
                 ),
               ],

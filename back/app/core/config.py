@@ -57,9 +57,6 @@ class Settings(BaseSettings):
     database_url: str | None = None
     database_path: Path = Field(default=BACK_ROOT / "data" / "nerilum.db")
     model_dir: Path | None = None
-    # Checkpoint PyTorch opcional para Grad-CAM. Si es una carpeta se busca un
-    # único *.pt; si no se define, se usa MODEL_DIR precedido de *.pt.
-    explainer_model_path: Path | None = None
     model_input_size: int | None = Field(default=None, ge=32)
     model_resize_mode: Literal["letterbox", "center_crop", "stretch"] = "center_crop"
     model_softmax: bool = False

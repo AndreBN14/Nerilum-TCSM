@@ -102,8 +102,9 @@ class AnalysisPreview(BaseModel):
     scores: Scores
     model: ModelMetadata
     save_proof: str
-    # PNG (base64) del Grad-CAM de la clase predicha. Solo se incluye durante la
-    # previsualización; no se guarda en la base ni en el almacenamiento.
+    # PNG (base64) del mapa de explicabilidad (CAM desde el .onnx) de la clase
+    # predicha. Solo se incluye durante la previsualización; no se guarda en la
+    # base ni en el almacenamiento.
     gradcam_png: str | None = None
     disclaimer: str = DISCLAIMER
 

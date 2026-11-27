@@ -188,10 +188,12 @@ async def _predict(data: bytes, services: Services, settings: Settings
 async def _gradcam_base64(
     services: Services, image: object, prediction: AnalysisPrediction
 ) -> str | None:
-    """Genera el Grad-CAM si el explicador opcional está disponible.
+    """Genera el mapa de explicabilidad (Grad-CAM o CAM) si está disponible.
 
-    Un fallo del explicador nunca tumba la clasificación: se registra el tipo de
-    error (sin datos de la imagen) y la respuesta viaja con ``gradcam_png=None``.
+    El mapa se deriva siempre del ``.onnx`` de clasificación (CAM), sin
+    ``torch`` ni ``best.pt``. Un fallo del explicador nunca tumba la
+    clasificación: se registra el tipo de error (sin datos de la imagen) y la
+    respuesta viaja con ``gradcam_png=None``.
     """
 
     explainer = services.explainer
