@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/nerilum_theme.dart';
+import '../widgets/web_dialogs.dart';
 
 /// Modal de selección de rango de fechas del portal web.
 ///
@@ -14,7 +15,7 @@ Future<DateTimeRange?> showWebDateRangeModal(
   int pastYears = 5,
 }) {
   final now = DateTime.now();
-  return showDialog<DateTimeRange>(
+  return showBlurDialog<DateTimeRange>(
     context: context,
     builder: (_) => _DateRangeModal(
       initialRange: initialRange,
