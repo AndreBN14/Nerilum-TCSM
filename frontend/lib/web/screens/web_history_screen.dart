@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/nerilum_theme.dart';
+import '../../core/utils/category_label.dart';
 import '../../core/utils/score_text.dart';
 import '../../data/datasources/http_analysis_data_source.dart';
 import '../../domain/models/analysis_result.dart';
@@ -54,6 +55,11 @@ class _WebHistoryScreenState extends State<WebHistoryScreen> {
 
   String? _categoryFilter;
   DateTimeRange? _dateFilter;
+
+  // Ordenación por columna ('name' | 'date'); null respeta el orden del
+  // backend (fecha descendente).
+  String? _sortColumn;
+  bool _sortAsc = true;
 
   WebViewStatus _status = WebViewStatus.loading;
   String? _error;
@@ -123,6 +129,34 @@ class _WebHistoryScreenState extends State<WebHistoryScreen> {
     }
 
     final list = filtered.toList();
+    if (_sortColumn != null) {
+      int compare(AnalysisResult a, AnalysisResult b) {
+        switch (_sortColumn) {
+          case 'name':
+            final an = (a.displayName ?? '').toLowerCase();
+            final bn = (b.displayName ?? '').toLowerCase();
+            return an.compareTo(bn);
+          case 'probability':
+            // Sin probabilidad (−1) queda al final en ambos sentidos.
+            final ap = a.probability ?? -1.0;
+            final bp = b.probability ?? -1.0;
+            return ap.compareTo(bp);
+          case 'date':
+          default:
+            return a.createdAt.compareTo(b.createdAt);
+        }
+      }
+
+      list.sort(compare);
+      if (!_sortAsc) {
+        final reversed = list.reversed.toList();
+        return _paginate(reversed);
+      }
+    }
+    _paginate(list);
+  }
+
+  void _paginate(List<AnalysisResult> list) {
     var page = _page;
     if (page * _pageSize > list.length) page = 0;
     final from = (page * _pageSize).clamp(0, list.length);
@@ -142,6 +176,23 @@ class _WebHistoryScreenState extends State<WebHistoryScreen> {
   }
 
   bool get _hasActiveFilters => _categoryFilter != null || _dateFilter != null;
+
+  /// Alterna la ordenación: primera pulsación ordena ascendente, las
+  /// siguientes invierten. Cambiar de columna reinicia en ascendente,
+  /// salvo Probabilidad, que arranca de mayor a menor (dirección natural
+  /// para esa columna).
+  void _toggleSort(String column) {
+    setState(() {
+      if (_sortColumn == column) {
+        _sortAsc = !_sortAsc;
+      } else {
+        _sortColumn = column;
+        _sortAsc = column != 'probability';
+      }
+    });
+    _page = 0;
+    _apply();
+  }
 
   /// Limpia ambos filtros (categoría y fechas) y vuelve a la primera página.
   /// Accesible desde el tacho de la barra de filtros y desde la acción del
@@ -227,11 +278,13 @@ class _WebHistoryScreenState extends State<WebHistoryScreen> {
                   itemBuilder: (_) => [
                     _categoryMenuItem('', 'Todas las categorías', colors),
                     for (final c in _categories)
-                      _categoryMenuItem(c, c, colors),
+                      _categoryMenuItem(c, categoryLabel(c), colors),
                   ],
                   child: _FilterChip(
                     icon: Icons.filter_list,
-                    label: _categoryFilter ?? 'Todas las categorías',
+                    label: _categoryFilter == null
+                        ? 'Todas las categorías'
+                        : categoryLabel(_categoryFilter!),
                     colors: colors,
                     onTap: null, // El tap lo gestiona PopupMenuButton.
                     active: _categoryFilter != null,
@@ -249,42 +302,79 @@ class _WebHistoryScreenState extends State<WebHistoryScreen> {
       contentBuilder: (_) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // ── Lista de registros (página visible) ────────────────────────
+          // ── Tabla en escritorio; tarjetas en ventanas estrechas ────────
+          // La paginación vive dentro del mismo bloque, pegada a la tabla:
+          // en ventanas bajas la tabla cede altura (reserva de 60px) para
+          // que ambos quepan sin overflow.
           Expanded(
-            child: ListView.separated(
-              itemCount: _records.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 10),
-              itemBuilder: (_, index) {
-                final item = _records[index];
-                return _HistoryRow(
-                  result: item,
-                  colors: colors,
-                  onTap: () => widget.onOpenAnalysis(item.id ?? ''),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                Widget? pagination;
+                if (_filteredTotal > 0) {
+                  pagination = Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: _PaginationBar(
+                      page: _page,
+                      pageSize: _pageSize,
+                      total: _filteredTotal,
+                      colors: colors,
+                      onPage: (page) {
+                        setState(() => _page = page);
+                        _apply();
+                      },
+                    ),
+                  );
+                }
+                if (constraints.maxWidth >= 640) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight:
+                                constraints.maxHeight -
+                                (pagination == null ? 0 : 60),
+                          ),
+                          child: _HistoryTable(
+                            records: _records,
+                            colors: colors,
+                            sortColumn: _sortColumn,
+                            sortAsc: _sortAsc,
+                            onSort: _toggleSort,
+                            onTap: (id) => widget.onOpenAnalysis(id),
+                          ),
+                        ),
+                      ),
+                      ?pagination,
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ListView.separated(
+                        itemCount: _records.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (_, index) {
+                          final item = _records[index];
+                          return _HistoryRow(
+                            result: item,
+                            colors: colors,
+                            onTap: () => widget.onOpenAnalysis(item.id ?? ''),
+                          );
+                        },
+                      ),
+                    ),
+                    ?pagination,
+                  ],
                 );
               },
             ),
           ),
-          if (_filteredTotal > 0) ...[
-            const SizedBox(height: 16),
-            _PaginationBar(
-              page: _page,
-              pageSize: _pageSize,
-              total: _filteredTotal,
-              colors: colors,
-              onPrev: _page > 0
-                  ? () {
-                      setState(() => _page--);
-                      _apply();
-                    }
-                  : null,
-              onNext: (_page + 1) * _pageSize < _filteredTotal
-                  ? () {
-                      setState(() => _page++);
-                      _apply();
-                    }
-                  : null,
-            ),
-          ],
           const SizedBox(height: 20),
           const _DisclaimerRow(),
         ],
@@ -435,6 +525,270 @@ class _ClearFiltersButtonState extends State<_ClearFiltersButton> {
   }
 }
 
+/// Tabla de historial para ventanas anchas: cabecera ordenable
+/// (Nombre/Probabilidad/Fecha) y filas con hover. En pantallas estrechas se
+/// usa la versión en tarjetas ([_HistoryRow]).
+class _HistoryTable extends StatelessWidget {
+  const _HistoryTable({
+    required this.records,
+    required this.colors,
+    required this.sortColumn,
+    required this.sortAsc,
+    required this.onSort,
+    required this.onTap,
+  });
+
+  final List<AnalysisResult> records;
+  final NerilumPalette colors;
+  final String? sortColumn;
+  final bool sortAsc;
+  final void Function(String column) onSort;
+  final ValueChanged<String> onTap;
+
+  static const _categoryWidth = 200.0;
+  static const _probabilityWidth = 110.0;
+  static const _dateWidth = 150.0;
+  static const _chevronWidth = 40.0;
+
+  /// Altura fija de cada fila: hace la tabla uniforme y hace que la página
+  /// (máx. 10 filas) determine el tamaño total del bloque.
+  static const _rowHeight = 52.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      // Se ajusta al contenido: cabecera + filas de la página (máx. 10). Solo
+      // si la ventana es muy baja, Flexible recorta y aparece scroll interno.
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _header(),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const ClampingScrollPhysics(),
+              itemCount: records.length,
+              separatorBuilder: (_, _) =>
+                  Divider(height: 1, thickness: 1, color: colors.border),
+              itemBuilder: (_, index) {
+                final item = records[index];
+                return _HistoryTableRow(
+                  result: item,
+                  colors: colors,
+                  onTap: () => onTap(item.id ?? ''),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Celda de cabecera; si [column] no es null es ordenable.
+  Widget _headCell(
+    NerilumPalette colors, {
+    required String label,
+    required Widget child,
+    String? column,
+  }) {
+    final active = sortColumn == column;
+    final content = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        child,
+        if (column != null) ...[
+          const SizedBox(width: 4),
+          Icon(
+            active
+                ? (sortAsc ? Icons.arrow_upward : Icons.arrow_downward)
+                : Icons.unfold_more,
+            size: 13,
+            color: active ? colors.mint : colors.textSecondary.withValues(alpha: 0.4),
+          ),
+        ],
+      ],
+    );
+
+    if (column == null) return content;
+
+    return InkWell(
+      onTap: () => onSort(column),
+      borderRadius: BorderRadius.circular(8),
+      child: content,
+    );
+  }
+
+  Widget _header() {
+    final style = TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.6,
+      color: colors.textSecondary,
+    );
+    return Container(
+      color: colors.surfaceRaised,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: _headCell(
+              colors,
+              label: 'Nombre',
+              column: 'name',
+              child: Text('NOMBRE', style: style),
+            ),
+          ),
+          SizedBox(
+            width: _categoryWidth,
+            child: Text('CATEGORÍA', style: style),
+          ),
+          SizedBox(
+            width: _probabilityWidth,
+            child: _headCell(
+              colors,
+              label: 'Probabilidad',
+              column: 'probability',
+              child: Text('PROBABILIDAD', style: style),
+            ),
+          ),
+          SizedBox(
+            width: _dateWidth,
+            child: _headCell(
+              colors,
+              label: 'Fecha',
+              column: 'date',
+              child: Text('FECHA', style: style),
+            ),
+          ),
+          const SizedBox(width: _chevronWidth),
+        ],
+      ),
+    );
+  }
+}
+
+/// Fila de la tabla: celdas alineadas con la cabecera, hover y tap al detalle.
+class _HistoryTableRow extends StatefulWidget {
+  const _HistoryTableRow({
+    required this.result,
+    required this.colors,
+    required this.onTap,
+  });
+
+  final AnalysisResult result;
+  final NerilumPalette colors;
+  final VoidCallback onTap;
+
+  @override
+  State<_HistoryTableRow> createState() => _HistoryTableRowState();
+}
+
+class _HistoryTableRowState extends State<_HistoryTableRow> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = widget.colors;
+    final d = widget.result.createdAt;
+    String two(int n) => n.toString().padLeft(2, '0');
+    final dateStr =
+        '${two(d.day)}/${two(d.month)}/${d.year} · '
+        '${two(d.hour)}:${two(d.minute)}';
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: Material(
+        color: _hovering ? colors.surfaceRaised : colors.surface,
+        child: InkWell(
+          onTap: widget.onTap,
+          child: Container(
+            height: _HistoryTable._rowHeight,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.result.displayName ?? 'Análisis sin nombre',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: _HistoryTable._categoryWidth,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          categoryLabel(widget.result.category),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: colors.mintSecondary,
+                          ),
+                        ),
+                      ),
+                      if (widget.result.isDemo) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          'demo',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: _HistoryTable._probabilityWidth,
+                  child: widget.result.probability == null
+                      ? const SizedBox.shrink()
+                      : Text(
+                          scoreText(widget.result.probability!),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colors.textPrimary,
+                          ),
+                        ),
+                ),
+                SizedBox(
+                  width: _HistoryTable._dateWidth,
+                  child: Text(
+                    dateStr,
+                    style: TextStyle(fontSize: 13, color: colors.textSecondary),
+                  ),
+                ),
+                const SizedBox(
+                  width: _HistoryTable._chevronWidth,
+                  child: Icon(Icons.chevron_right, size: 20),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _HistoryRow extends StatefulWidget {
   const _HistoryRow({
     required this.result,
@@ -519,9 +873,13 @@ class _HistoryRowState extends State<_HistoryRow> {
                         runSpacing: 4,
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          _Tag(
-                            label: widget.result.category,
-                            colors: colors,
+                          Text(
+                            categoryLabel(widget.result.category),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: colors.mintSecondary,
+                            ),
                           ),
                           if (widget.result.probability != null)
                             Text(
@@ -533,10 +891,12 @@ class _HistoryRowState extends State<_HistoryRow> {
                               ),
                             ),
                           if (widget.result.isDemo)
-                            _Tag(
-                              label: 'demo',
-                              colors: colors,
-                              outlined: true,
+                            Text(
+                              'demo',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: colors.textSecondary,
+                              ),
                             ),
                         ],
                       ),
@@ -553,63 +913,156 @@ class _HistoryRowState extends State<_HistoryRow> {
   }
 }
 
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label, required this.colors, this.outlined = false});
-
-  final String label;
-  final NerilumPalette colors;
-  final bool outlined;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: outlined ? Colors.transparent : colors.surfaceRaised,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: outlined ? colors.border : colors.border),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-      ),
-    );
-  }
-}
-
+/// Paginación numerada tipo portal web: ‹ [1] [2] [3] … [N] › con la página
+/// activa resaltada y el rango visible ("11–20 de 43") a la derecha.
 class _PaginationBar extends StatelessWidget {
   const _PaginationBar({
     required this.page,
     required this.pageSize,
     required this.total,
     required this.colors,
-    required this.onPrev,
-    required this.onNext,
+    required this.onPage,
   });
 
   final int page;
   final int pageSize;
   final int total;
   final NerilumPalette colors;
-  final VoidCallback? onPrev;
-  final VoidCallback? onNext;
+  final ValueChanged<int> onPage;
+
+  static const _buttonSize = 34.0;
 
   @override
   Widget build(BuildContext context) {
+    final pageCount = (total + pageSize - 1) ~/ pageSize;
     final from = total == 0 ? 0 : page * pageSize + 1;
-    final to = (page + 1) * pageSize;
+    final to = (page + 1) * pageSize > total ? total : (page + 1) * pageSize;
+
+    // Ventana uniforme: 1 … [5 páginas alrededor de la actual] … N, con la
+    // primera y la última siempre visibles y "…" en los huecos. Los límites
+    // de la ventana (1..pageCount-6) evitan duplicar los extremos.
+    final numbers = <int?>[];
+    if (pageCount <= 7) {
+      for (var i = 0; i < pageCount; i++) {
+        numbers.add(i);
+      }
+    } else {
+      final windowStart = (page - 2).clamp(1, pageCount - 6);
+      final windowEnd = windowStart + 5; // exclusivo
+      numbers.add(0);
+      if (windowStart > 1) numbers.add(null);
+      for (var i = windowStart; i < windowEnd; i++) {
+        numbers.add(i);
+      }
+      if (windowEnd < pageCount - 1) numbers.add(null);
+      numbers.add(pageCount - 1);
+    }
+
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        IconButton(onPressed: onPrev, icon: const Icon(Icons.chevron_left)),
+        IconButton(
+          tooltip: 'Anterior',
+          onPressed: page > 0 ? () => onPage(page - 1) : null,
+          icon: const Icon(Icons.chevron_left),
+        ),
+        for (final n in numbers)
+          n == null
+              ? SizedBox(
+                  width: _buttonSize,
+                  height: _buttonSize,
+                  child: Center(
+                    child: Text(
+                      '…',
+                      style: TextStyle(
+                        color: colors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                )
+              : _PageButton(
+                  label: '${n + 1}',
+                  selected: n == page,
+                  colors: colors,
+                  onTap: n == page ? null : () => onPage(n),
+                ),
+        IconButton(
+          tooltip: 'Siguiente',
+          onPressed: (page + 1) < pageCount ? () => onPage(page + 1) : null,
+          icon: const Icon(Icons.chevron_right),
+        ),
+        const Spacer(),
         Text(
-          '$from–${to > total ? total : to} de $total',
+          '$from–$to de $total',
           style: TextStyle(color: colors.textSecondary, fontSize: 13),
         ),
-        IconButton(onPressed: onNext, icon: const Icon(Icons.chevron_right)),
       ],
+    );
+  }
+}
+
+/// Botón de número de página: activo relleno en mint, hover en surfaceRaised.
+class _PageButton extends StatefulWidget {
+  const _PageButton({
+    required this.label,
+    required this.selected,
+    required this.colors,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final NerilumPalette colors;
+  final VoidCallback? onTap;
+
+  @override
+  State<_PageButton> createState() => _PageButtonState();
+}
+
+class _PageButtonState extends State<_PageButton> {
+  bool _hovering = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = widget.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: MouseRegion(
+        cursor: widget.onTap == null
+            ? MouseCursor.defer
+            : SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovering = true),
+        onExit: (_) => setState(() => _hovering = false),
+        child: GestureDetector(
+          onTap: widget.onTap,
+          child: Container(
+            width: _PaginationBar._buttonSize,
+            height: _PaginationBar._buttonSize,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: widget.selected
+                  ? colors.mint
+                  : _hovering
+                      ? colors.surfaceRaised
+                      : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: widget.selected ? colors.mint : colors.border,
+              ),
+            ),
+            child: Text(
+              widget.label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: widget.selected ? FontWeight.w700 : FontWeight.w500,
+                color: widget.selected
+                    ? colors.mintDarkText
+                    : colors.textSecondary,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

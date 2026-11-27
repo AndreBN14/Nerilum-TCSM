@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/nerilum_theme.dart';
+import '../../core/utils/category_label.dart';
 import '../../presentation/widgets/zoomable_analysis_image.dart';
 import '../../core/utils/score_text.dart';
 import '../../data/datasources/http_analysis_data_source.dart';
@@ -252,7 +253,7 @@ class _DetailContent extends StatelessWidget {
               Row(
                 children: [
                   Text(
-                    result.category,
+                    categoryLabel(result.category),
                     style: TextStyle(
                       color: colors.mint,
                       fontSize: 24,
@@ -308,7 +309,7 @@ class _DetailContent extends StatelessWidget {
                             Expanded(
                               flex: 2,
                               child: Text(
-                                cat,
+                                categoryLabel(cat),
                                 maxLines: 2,
                                 style: const TextStyle(fontSize: 12),
                               ),
@@ -317,7 +318,8 @@ class _DetailContent extends StatelessWidget {
                             Expanded(
                               flex: 3,
                               child: Semantics(
-                                label: '$cat: ${scoreText(result.scores[cat]!)}',
+                                label:
+                                    '${categoryLabel(cat)}: ${scoreText(result.scores[cat]!)}',
                                 child: LinearProgressIndicator(
                                   value: result.scores[cat]!.clamp(0, 1),
                                   minHeight: 14,
