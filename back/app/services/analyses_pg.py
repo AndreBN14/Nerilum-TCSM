@@ -299,5 +299,15 @@ class PostgresAnalysisRepository:
             conn.commit()
             return len(demo)
 
+    def delete_by_account(self, account_id: str) -> int:
+        """Elimina todos los análisis de la cuenta. Devuelve filas borradas."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM analyses WHERE account_id = %s",
+                (UUID(account_id),),
+            )
+            conn.commit()
+            return cursor.rowcount
+
     def close(self) -> None:
         pass

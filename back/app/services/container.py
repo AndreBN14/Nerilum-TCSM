@@ -11,6 +11,7 @@ from app.services.analyses_pg import PostgresAnalysisRepository
 from app.services.cam import Explainer, OnnxCamExplainer
 from app.services.inference import InferenceStatus, OnnxClassifier, UnavailableInference
 from app.services.image_storage import ImageStorage, SupabaseImageStorage
+from app.services.supabase_admin import SupabaseAuthAdmin
 
 logger = logging.getLogger("nerilum")
 
@@ -23,6 +24,7 @@ class Services:
     token_verifier: TokenVerifier
     analyses: AnalysisRepository
     image_storage: ImageStorage | None = None
+    auth_admin: SupabaseAuthAdmin | None = None
     explainer: Explainer | None = None
 
     async def aclose(self) -> None:
@@ -34,6 +36,8 @@ class Services:
             closer()
         if self.image_storage is not None:
             self.image_storage.close()
+        if self.auth_admin is not None:
+            self.auth_admin.close()
 
 
 def _resolve_model_dir(settings: Settings):
@@ -114,9 +118,14 @@ def create_services(settings: Settings) -> Services:
                              settings.analysis_images_bucket)
         if settings.supabase_service_role_key else None
     )
+    auth_admin = (
+        SupabaseAuthAdmin(settings.supabase_url, settings.supabase_service_role_key)
+        if settings.supabase_service_role_key else None
+    )
     explainer = _build_explainer(settings)
     services = Services(inference=inference, token_verifier=verifier, analyses=analyses,
-                        image_storage=image_storage, explainer=explainer)
+                        image_storage=image_storage, auth_admin=auth_admin,
+                        explainer=explainer)
 
     # Semilla de demostración: solo desarrollo, opcional e idempotente.
     if (

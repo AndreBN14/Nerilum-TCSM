@@ -190,6 +190,7 @@ def build_app(
     settings_overrides: dict[str, object] | None = None,
     image_storage=None,
     explainer=None,
+    auth_admin=None,
 ) -> FastAPI:
     overrides: dict[str, object] = {
         "supabase_url": SUPABASE_URL,
@@ -205,6 +206,7 @@ def build_app(
         token_verifier=verifier,
         analyses=SqliteAnalysisRepository(settings.database_path),
         image_storage=image_storage,
+        auth_admin=auth_admin,
         explainer=explainer,
     )
     return create_app(settings, services)

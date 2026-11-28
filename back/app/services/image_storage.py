@@ -14,6 +14,7 @@ from app.core.errors import ApiException
 class ImageStorage(Protocol):
     def put(self, path: str, content: bytes, mime_type: str) -> None: ...
     def get(self, path: str) -> bytes: ...
+    def remove(self, path_or_prefix: str) -> None: ...
     def close(self) -> None: ...
 
 
@@ -75,10 +76,15 @@ class SupabaseImageStorage:
             raise ApiException(503, "storage_unavailable", "No se pudo listar el bucket.")
         return response.json()
 
-    def remove(self, path: str) -> None:
+    def remove(self, path_or_prefix: str) -> None:
+        """Borra un objeto o, con un prefijo terminado en '/', toda su carpeta.
+
+        Usado por la reconciliación de huérfanos y por DELETE /auth/me,
+        que borra la carpeta completa del usuario con ``f"{account_id}/"``.
+        """
         try:
             response = self._client.request("DELETE", self._base,
-                                            json={"prefixes": [path]})
+                                            json={"prefixes": [path_or_prefix]})
         except httpx.HTTPError as exc:
             raise ApiException(503, "storage_unavailable", "No se pudo borrar el archivo huérfano.") from exc
         if response.status_code not in (200, 204):
