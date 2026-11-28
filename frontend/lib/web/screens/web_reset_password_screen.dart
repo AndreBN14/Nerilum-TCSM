@@ -193,6 +193,13 @@ class _WebResetPasswordScreenState extends State<WebResetPasswordScreen> {
                   )
                 : const Text('Guardar contraseña'),
           ),
+          const SizedBox(height: 8),
+          // Salida de emergencia: una sesión de recuperación persistida no
+          // debe atrapar al usuario sin opción de volver al login.
+          TextButton(
+            onPressed: _loading ? null : _backToLogin,
+            child: const Text('Cancelar y volver al inicio de sesión'),
+          ),
         ],
       ),
     );

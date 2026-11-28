@@ -223,6 +223,55 @@ class HttpAnalysisDataSource {
     }
   }
 
+  /// Elimina definitivamente la cuenta autenticada en el backend
+  /// (DELETE /auth/me): sus análisis, su carpeta de Storage y el usuario
+  /// de Supabase Auth. El id siempre sale del JWT verificado en el servidor.
+  Future<void> deleteAccount() async {
+    final request = http.Request('DELETE', baseUri.resolve('auth/me'));
+    String? token;
+    try {
+      token = await accessToken();
+    } on AnalysisNetworkFailure {
+      rethrow;
+    } catch (_) {
+      throw const AnalysisFailure(
+        'No se pudo recuperar la sesión. Vuelve a iniciar sesión.',
+      );
+    }
+    if (token == null || token.isEmpty) {
+      throw const AnalysisFailure('Inicia sesión para acceder al backend.');
+    }
+    request.headers['Authorization'] = 'Bearer $token';
+    request.followRedirects = false;
+    http.Response response;
+    try {
+      response = await _client
+          .send(request)
+          .then(http.Response.fromStream)
+          .timeout(timeout);
+    } on TimeoutException {
+      throw const AnalysisNetworkFailure(
+        'La eliminación tardó demasiado. Tus datos podrían seguir intactos; '
+        'inténtalo de nuevo.',
+      );
+    } on http.ClientException {
+      throw const AnalysisNetworkFailure(
+        'No se pudo completar la conexión. Tus datos podrían seguir '
+        'intactos; inténtalo de nuevo.',
+      );
+    }
+    if (response.statusCode == 204) return;
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw AnalysisFailure(switch (response.statusCode) {
+        401 => 'La sesión no es válida o expiró. Vuelve a iniciar sesión.',
+        503 =>
+          'La eliminación no está disponible ahora. Inténtalo de nuevo en '
+              'unos segundos.',
+        _ => 'No se pudo eliminar la cuenta. Inténtalo de nuevo.',
+      });
+    }
+  }
+
   Future<Uint8List> loadImage(String id) async {
     if (!RegExp(r'^an_[a-f0-9]+$').hasMatch(id)) {
       throw const AnalysisFailure('Identificador de análisis inválido.');

@@ -18,7 +18,11 @@ import 'web_forgot_password_dialog.dart';
 /// de main_web.dart reacciona al stream de sesión y navega automáticamente
 /// al portal.
 class WebLoginScreen extends StatefulWidget {
-  const WebLoginScreen({super.key});
+  const WebLoginScreen({super.key, this.initialMessage});
+
+  /// Aviso mostrado al abrir el login (p. ej. callback de recuperación
+  /// fallido detectado por el _AuthGate).
+  final String? initialMessage;
 
   @override
   State<WebLoginScreen> createState() => _WebLoginScreenState();
@@ -34,6 +38,7 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
   bool _loading = false;
   bool _obscurePass = true;
   bool _acceptTerms = false;
+  bool _emailNotConfirmed = false;
   String? _errorMessage;
   String? _infoMessage;
 
@@ -83,9 +88,53 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
         // El _AuthGate detecta la sesión y abre el portal automáticamente.
       }
     } on AuthException catch (e) {
-      if (mounted) setState(() => _errorMessage = friendlyAuthError(e.message));
+      if (mounted) {
+        setState(() {
+          _errorMessage = friendlyAuthError(e.message);
+          // Error típico al intentar ingresar sin confirmar el registro:
+          // ofrece reenviar el correo de confirmación con un enlace nuevo.
+          _emailNotConfirmed =
+              e.message.toLowerCase().contains('email not confirmed');
+        });
+      }
     } catch (_) {
       if (mounted) setState(() => _errorMessage = 'Error inesperado. Intenta de nuevo.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  /// Reenvía el correo de confirmación de registro con un enlace nuevo.
+  /// Genera un `token_hash` nuevo, independiente del verifier de PKCE.
+  Future<void> _resendConfirmation() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _errorMessage = 'Ingresa tu correo para reenviarlo.');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+      _infoMessage = null;
+    });
+    try {
+      await Supabase.instance.client.auth.resend(
+        type: OtpType.signup,
+        email: email,
+        emailRedirectTo: Uri.base.removeFragment().toString(),
+      );
+      if (mounted) {
+        setState(() {
+          _infoMessage = 'Te enviamos un nuevo correo de confirmación a $email.';
+          _emailNotConfirmed = false;
+        });
+      }
+    } on AuthException catch (e) {
+      if (mounted) setState(() => _errorMessage = friendlyAuthError(e.message));
+    } catch (_) {
+      if (mounted) {
+        setState(() => _errorMessage = 'No se pudo enviar el correo. Inténtalo de nuevo.');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -157,6 +206,10 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (widget.initialMessage != null) ...[
+              _MessageBanner(message: widget.initialMessage!, isError: true),
+              const SizedBox(height: 16),
+            ],
             Text(
               _isRegister ? 'Crear cuenta' : 'Ingresar',
               style: const TextStyle(
@@ -277,6 +330,15 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
             if (_errorMessage != null) ...[
               const SizedBox(height: 12),
               _MessageBanner(message: _errorMessage!, isError: true),
+            ],
+
+            // El correo aún no está confirmado: ofrecer reenviar el enlace.
+            if (_emailNotConfirmed) ...[
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: _loading ? null : _resendConfirmation,
+                child: const Text('Reenviar correo de confirmación'),
+              ),
             ],
 
             const SizedBox(height: 24),

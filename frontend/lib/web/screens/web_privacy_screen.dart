@@ -20,11 +20,8 @@ import '../widgets/web_download.dart';
 ///   - Exportar datos: NO requiere backend; usa GET /api/v1/analyses
 ///     (existente) + la identidad de Supabase, y descarga un JSON en el
 ///     navegador.
-///   - DELETE /api/v1/me — NO implementado aún en el backend.
-///
-/// La eliminación de cuenta sigue mostrando un aviso honesto de "pendiente
-/// de implementación". Cuando el backend la implemente, solo hay que
-/// sustituir el cuerpo de [_deleteAccount].
+///   - DELETE /api/v1/auth/me — implementado: borra análisis, imágenes
+///     (Storage) y el usuario de Supabase Auth.
 class WebPrivacyScreen extends StatefulWidget {
   const WebPrivacyScreen({super.key, required this.user, this.analysisSource});
 
@@ -41,6 +38,7 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
   String? _error;
   String? _info;
   bool _exporting = false;
+  bool _deleting = false;
 
   // ── Exportar datos ─────────────────────────────────────────────────────────
 
@@ -141,22 +139,32 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
 
   // ── Eliminar cuenta ────────────────────────────────────────────────────────
   //
-  // Cuando el backend implemente DELETE /api/v1/me, reemplaza el cuerpo del
-  // bloque "pendiente" por la llamada HTTP real, y después cierra sesión:
-  //
-  //   await client.delete(Uri.parse('$baseUrl/api/v1/me'),
-  //       headers: {'Authorization': 'Bearer $token'});
-  //   await Supabase.instance.client.auth.signOut();
-  //   // El _AuthGate vuelve al login.
-  //
-  Future<void> _confirmAndDelete() async {
+  // DELETE /api/v1/auth/me: el backend borra los análisis, la carpeta de
+  // Storage del usuario y el usuario de Supabase Auth (que arrastra el
+  // perfil por FK cascade). Después se cierra la sesión y el _AuthGate
+  // vuelve al login.
+
+  Future<void> _deleteAccount() async {
+    if (_deleting) return;
+    final source = widget.analysisSource;
+    if (source == null) {
+      setState(() {
+        _error =
+            'El backend de análisis no está configurado. '
+            'Define API_BASE_URL al ejecutar la app.';
+        _info = null;
+      });
+      return;
+    }
+
     final ok = await showBlurDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Eliminar cuenta'),
         content: const Text(
-          'Esta acción es permanente y borrará tus análisis y tu perfil. '
-          'No se puede deshacer. ¿Deseas continuar?',
+          'Se borrarán definitivamente tu cuenta, tus análisis y tus '
+          'imágenes. Esta acción es permanente y no se puede deshacer. '
+          '¿Deseas continuar?',
         ),
         actions: [
           TextButton(
@@ -164,21 +172,38 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
             child: const Text('Cancelar'),
           ),
           FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: NerilumColors.error,
+              foregroundColor: NerilumColors.background,
+            ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar'),
+            child: const Text('Eliminar definitivamente'),
           ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
 
-    // El endpoint DELETE /api/v1/me todavía no existe en el backend.
     setState(() {
+      _deleting = true;
+      _error = null;
       _info = null;
-      _error =
-          'La eliminación de cuenta aún no está disponible. El endpoint del '
-          'backend (DELETE /api/v1/me) está pendiente de implementación.';
     });
+    try {
+      await source.deleteAccount();
+      // El backend ya borró la cuenta: cerrar sesión para volver al login.
+      await Supabase.instance.client.auth.signOut();
+      // El _AuthGate reacciona al evento signedOut y muestra el login.
+    } on AnalysisFailure catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() =>
+          _error = 'No se pudo eliminar la cuenta. Inténtalo de nuevo.');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   @override
@@ -230,12 +255,12 @@ class _WebPrivacyScreenState extends State<WebPrivacyScreen> {
             icon: Icons.delete_forever_outlined,
             title: 'Eliminar mi cuenta',
             description:
-                'Borra permanentemente tu cuenta y todos tus análisis. '
-                'No se puede deshacer. Pendiente de implementación en el backend.',
-            actionLabel: 'Solicitar eliminación',
+                'Borra permanentemente tu cuenta, tus análisis y tus '
+                'imágenes. Esta acción es permanente y no se puede deshacer.',
+            actionLabel: _deleting ? 'Eliminando…' : 'Eliminar definitivamente',
             actionIcon: Icons.delete_outline,
-            onAction: _confirmAndDelete,
-            pendingNote: true,
+            onAction: _deleteAccount,
+            busy: _deleting,
             destructive: true,
             colors: colors,
           ),
@@ -286,7 +311,6 @@ class _PrivacyAction extends StatelessWidget {
     required this.onAction,
     required this.colors,
     this.destructive = false,
-    this.pendingNote = false,
     this.busy = false,
   });
 
@@ -298,7 +322,6 @@ class _PrivacyAction extends StatelessWidget {
   final VoidCallback onAction;
   final NerilumPalette colors;
   final bool destructive;
-  final bool pendingNote;
 
   /// true mientras la acción está en curso: el botón queda deshabilitado
   /// y muestra un spinner.
@@ -332,27 +355,6 @@ class _PrivacyAction extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (pendingNote) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.surfaceRaised,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: colors.border),
-                        ),
-                        child: Text(
-                          'pendiente',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 6),
