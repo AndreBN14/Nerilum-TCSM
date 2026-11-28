@@ -71,6 +71,9 @@ class _WebLoginScreenState extends State<WebLoginScreen> {
           email: _emailCtrl.text.trim(),
           password: _passCtrl.text,
           data: {'display_name': _nameCtrl.text.trim()},
+          // La plantilla de confirmación usa {{ .RedirectTo }}: el enlace
+          // vuelve al origen donde se inició el registro (local o producción).
+          emailRedirectTo: Uri.base.removeFragment().toString(),
         );
         if (mounted) {
           setState(() {

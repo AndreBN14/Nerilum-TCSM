@@ -8,6 +8,7 @@ import '../app/api_configuration.dart';
 import '../core/theme/nerilum_theme.dart';
 import '../data/datasources/http_analysis_data_source.dart';
 import '../domain/repositories/analysis_repository.dart';
+import 'screens/web_email_verified_screen.dart';
 import 'screens/web_login_screen.dart';
 import 'screens/web_reset_password_screen.dart';
 import 'web_portal_shell.dart';
@@ -235,6 +236,9 @@ class _AuthGateState extends State<_AuthGate> {
   bool _tokenHashAttempted = false;
   bool _processingTokenHash = false;
 
+  // Registro verificado vía enlace: pantalla de éxito antes del portal.
+  bool _emailVerifiedPending = false;
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<AuthState>(
@@ -248,6 +252,7 @@ class _AuthGateState extends State<_AuthGate> {
         if (event == AuthChangeEvent.signedOut) {
           _recoveryMode = false;
           _failedCallback = false;
+          _emailVerifiedPending = false;
           return const WebLoginScreen();
         }
         // Un login nuevo revalida todo: limpia el estado de callback fallido.
@@ -294,6 +299,16 @@ class _AuthGateState extends State<_AuthGate> {
         }
         if (_failedCallback) {
           return WebLoginScreen(initialMessage: _failedCallbackMessage);
+        }
+
+        // Registro verificado vía enlace: pantalla de éxito antes del
+        // portal. La sesión ya existe; solo falta que el usuario decida
+        // continuar (o cierre la pestaña y vuelva más tarde).
+        if (_emailVerifiedPending && session != null) {
+          return WebEmailVerifiedScreen(
+            email: session.user.email ?? '',
+            onContinue: () => setState(() => _emailVerifiedPending = false),
+          );
         }
 
         // Modo recuperación: por el evento o por la firma de la sesión.
@@ -362,7 +377,13 @@ class _AuthGateState extends State<_AuthGate> {
       if (!mounted) return;
       // El evento emitido reconstruye el gate con la sesión nueva.
       _cleanAuthCallbackParams();
-      setState(() => _processingTokenHash = false);
+      setState(() {
+        _processingTokenHash = false;
+        // Registro confirmado: pantalla de verificación exitosa antes del
+        // portal. La recuperación va a la pantalla de restablecer por su
+        // propio evento (passwordRecovery).
+        _emailVerifiedPending = otpType == OtpType.signup;
+      });
     } on AuthException catch (e) {
       if (!mounted) return;
       _cleanAuthCallbackParams();
