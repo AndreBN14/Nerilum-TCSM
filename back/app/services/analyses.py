@@ -127,6 +127,7 @@ class AnalysisRepository(Protocol):
     def require_image_schema(self) -> None: ...
     def require_gradcam_schema(self) -> None: ...
     def seed_demo(self, account_id: str, model_info: ModelInfo) -> int: ...
+    def delete_by_account(self, account_id: str) -> int: ...
     def close(self) -> None: ...
     def list_image_paths(self) -> set[str]: ...
 
@@ -325,6 +326,15 @@ class SqliteAnalysisRepository:
                     ),
                 )
         return len(demo)
+
+    def delete_by_account(self, account_id: str) -> int:
+        """Elimina todos los análisis de la cuenta. Devuelve filas borradas."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM analyses WHERE account_id = ?",
+                (account_id,),
+            )
+            return cursor.rowcount
 
     def get_by_idempotency_key(
         self, account_id: str, key: str, request_hash: str

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 
@@ -96,9 +98,39 @@ class _WebReportScreenState extends State<WebReportScreen> {
       _pdfError = null;
     });
     try {
+      // Descarga la imagen y el mapa persistidos para incluirlos en el PDF,
+      // igual que hace la app móvil al exportar. Si la imagen falla, se
+      // aborta como en móvil; el mapa es prescindible y el PDF sale sin él.
+      Uint8List? imageBytes;
+      Uint8List? gradcamBytes;
+      final source = widget.analysisSource;
+      final id = result.id;
+      if (source != null && id != null) {
+        if (result.hasImage) {
+          try {
+            imageBytes = await source.loadImage(id);
+          } catch (_) {
+            if (!mounted) return;
+            setState(() => _pdfError =
+                'No se pudo recuperar la imagen para el PDF. Inténtalo de nuevo.');
+            return;
+          }
+        }
+        if (result.hasGradcam) {
+          try {
+            gradcamBytes = await source.loadGradcam(id);
+          } catch (_) {
+            gradcamBytes = null; // El PDF se genera sin mapa de atención.
+          }
+        }
+      }
       // Genera el PDF con el repositorio existente en el proyecto.
       // No invoca ningún endpoint del backend.
-      final bytes = await const PdfReportRepository().buildPdf(result);
+      final bytes = await const PdfReportRepository().buildPdf(
+        result,
+        imageBytes: imageBytes,
+        gradcamBytes: gradcamBytes,
+      );
       final rawName = result.displayName ?? 'analisis_nerilum';
       final safeName = rawName.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
       final filename =

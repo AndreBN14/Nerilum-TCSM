@@ -387,7 +387,8 @@ class HomeSkeleton extends StatelessWidget {
   }
 }
 
-/// Esqueleto de la vista Historial: filtros + lista de filas.
+/// Esqueleto de la vista Historial: lista de filas (los filtros reales se
+/// muestran encima en todos los estados, no se duplican como placeholder).
 class HistorySkeleton extends StatelessWidget {
   const HistorySkeleton({super.key, this.rows = 5});
   final int rows;
@@ -397,14 +398,6 @@ class HistorySkeleton extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: const [
-            SkeletonLine(width: 150, height: 36, radius: 20),
-            SizedBox(width: 12),
-            SkeletonLine(width: 150, height: 36, radius: 20),
-          ],
-        ),
-        const SizedBox(height: 20),
         Expanded(child: SkeletonList(itemCount: rows)),
       ],
     );

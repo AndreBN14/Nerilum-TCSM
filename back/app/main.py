@@ -49,7 +49,7 @@ def create_app(
         app.add_middleware(
             CORSMiddleware,
             allow_origins=config.cors_origins,
-            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_methods=["GET", "POST", "OPTIONS", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
         )
     register_error_handlers(app)

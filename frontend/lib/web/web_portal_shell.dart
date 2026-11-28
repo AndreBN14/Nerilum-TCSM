@@ -188,8 +188,11 @@ class _WebPortalShellState extends State<WebPortalShell> {
                     analysisSource: widget.analysisSource,
                     onOpenAnalysis: _openAnalysis,
                   ),
-                  WebAccountScreen(user: widget.user, onLogout: _logout),
-                  WebPrivacyScreen(user: widget.user),
+                  WebAccountScreen(user: widget.user),
+                  WebPrivacyScreen(
+                    user: widget.user,
+                    analysisSource: widget.analysisSource,
+                  ),
                 ],
               ),
             ),
